@@ -13,9 +13,20 @@
 inline static uint8_t	AddValueToStack(uint8_t Value);
 inline static void StartADC();
 
-#define		SENSOR_ADCVAL_DARK				20  // At which value will it start triggering night mode
-#define		SENSOR_ADCVAL_MAXIMUM			84  // At which value will it go to maximum brightness
-#define		SENSOR_ADCVAL_MINIMUM			20  // At which value will it go to minimum brightness
+/*
+ * In the hardware in this project the values are as follows:
+ * Completely dark room: 87mV   (4.4bit)
+ * Absolute minimum value: 81mV   (4.1bit)
+ * Gloomy room: 140mV   (7.1 bit)
+ * Low lighting: 400mV    (20.4 bit)
+ * Well lit room: 780mV    (39.8 bit)
+ * Brightly lit room: 950mV    (48.4 bit)
+ * Sunny room: 1905mV    (97.2 bit)
+ */
+
+#define		SENSOR_ADCVAL_DARK				7  // At which value will it start triggering night mode
+#define		SENSOR_ADCVAL_MAXIMUM			68  // At which value will it go to maximum brightness
+#define		SENSOR_ADCVAL_MINIMUM			5  // At which value will it go to minimum brightness
 
 #define		PWM_OUT_AUTO_MINIMUM			128 //AUTO Mode minimum output PWM value
 #define		PWM_OUT_AUTO_MAXIMUM			255 //AUTO Mode maximum output PWM value
@@ -29,15 +40,15 @@ inline static void StartADC();
 //  <pwm output> = temp
 #define		PWM_SENSOR_SHIFTUP_BY			1	
 
-#define		POTENTIOMETER_DISABLE_ALL_AUTO	224		// above this level the sensor does nothing
+#define		POTENTIOMETER_DISABLE_ALL_AUTO	250		// above this level the sensor does nothing
 #define		POTENTIOMETER_MANUALDIM_MAX		192		// above this level the lights are full on
 #define		POTENTIOMETER_MANUALDIM_MIN		64		// 
-#define		POTENTIOMETER_AUTO_SEPERATION	32		// the split value in the AUTO range
+#define		POTENTIOMETER_AUTO_SEPERATION	5		// the split value in the AUTO range
 
 #define		PWM_OUT_SHIFTUP_BY				1
 
 
-#define		ADC_SENSOR_STACKSIZE			16
+#define		ADC_SENSOR_STACKSIZE			15
 
 #define		ADC_PRESCALER					3 // Default 1MHz gives 125kHz ADC clock.
 /*
@@ -114,7 +125,7 @@ int main(void)
 {
     // during development nightmode output is disabled, to avoid triggering reset:
 	// TODO: uncomment when reset disable will be set:
-	DDRB = (PORTB_OUT_PWMPIN /*| PORTB_OUT_NIGHTMODE*/);
+	DDRB = (PORTB_OUT_PWMPIN | PORTB_OUT_NIGHTMODE);
 	PORTB = 0x00;
 	
 	// Disable the input logic on the ADC channels:
@@ -146,6 +157,7 @@ int main(void)
 
 ISR(WDT_vect)
 {
+	WDTCSR |= (1<<WDIE);
 	StartADC();
 }
 
@@ -156,13 +168,15 @@ ISR(ADC_vect)
 	uint8_t		avg;
 
 	temp = ADCL;
-
+	
+#if 1
 	if( ADMUX == ADC_ADMUX_SENSOR )
 	{
 		if( temp < SENSOR_ADCVAL_MINIMUM )
 			temp = SENSOR_ADCVAL_MINIMUM;
 		
 		avg = AddValueToStack(temp);
+		temp = avg;
 		
 		if( temp > SENSOR_ADCVAL_MAXIMUM )
 			temp = SENSOR_ADCVAL_MAXIMUM;
@@ -191,9 +205,12 @@ ISR(ADC_vect)
 					PORTB &= ~PORTB_OUT_NIGHTMODE;
 				}
 			}
+			else
+			{
+				PORTB &= ~PORTB_OUT_NIGHTMODE;
+			}
 		}
-	
-		if((PotentiometerVal > POTENTIOMETER_MANUALDIM_MAX ) && (PotentiometerVal < POTENTIOMETER_DISABLE_ALL_AUTO) )
+		else if( PotentiometerVal < POTENTIOMETER_DISABLE_ALL_AUTO )
 		{
 			if( avg < SENSOR_ADCVAL_DARK )
 			{
@@ -203,6 +220,10 @@ ISR(ADC_vect)
 			{
 				PORTB &= ~PORTB_OUT_NIGHTMODE;
 			}
+		}
+		else
+		{
+			PORTB &= ~PORTB_OUT_NIGHTMODE;
 		}
 	
 		ADMUX = ADC_ADMUX_POTENTIOMETER;
@@ -227,6 +248,7 @@ ISR(ADC_vect)
 		
 		ADMUX = ADC_ADMUX_SENSOR;
 	}
+#endif
 }
 
 
@@ -254,5 +276,5 @@ inline static uint8_t	AddValueToStack(uint8_t Value)
  */
 inline static void StartADC()
 {
-	ADCSRA = ((1<<ADEN)|(1<<ADSC)|(ADC_PRESCALER & 0x07));
+	ADCSRA = ((1<<ADEN)|(1<<ADSC)|(1<<ADIE)|(ADC_PRESCALER & 0x07));
 }
