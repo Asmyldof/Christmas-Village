@@ -31,8 +31,8 @@
 #define		DEF_NIGHT_TIME_TARGET_NUMBER_HOUSES	3 // at night time mode the device will slowly decrease to this number
 #define		DEF_MINIMUM_NUMBER_OF_HOUSES		0 // used when trying to set a number of houses with serial interface
 #define		DEF_MAIN_STEPDELAY					25 // number of 1s WDT interrupts per step in pattern
-#define		DEF_RANDOM_STEP_DELAY				8 // number of 1s WDT interrupts per step in random
-#define		DEF_NIGHTTIME_TICKS					100 // number of RandomSteps between target number houses decrements
+#define		DEF_RANDOM_STEP_DELAY				30 // number of 1s WDT interrupts per step in random
+#define		DEF_NIGHTTIME_TICKS					80 // number of RandomSteps between target number houses decrements
 
 #define		DEF_PATTERN_STEP_COUNT				90
 // in the pattern, the first nibble is the house to toggle, the second nibble is the post-delay steps untill the
@@ -49,6 +49,7 @@
 													}
 
 #define		MAXIMUM_PATTERN_SIZE			95  // Take into account the stack and 8 bytes of RAM used in general
+#define		SERIAL_BUFFER_SIZE				16  // Size of serial port communication buffers
 
 #define		EEPROM_PATTERN_HOUSENUMMASK		0xF0
 #define		EEPROM_PATTERN_DELAYTIMMASK		0x0F
@@ -123,7 +124,7 @@
 #ifdef	DEBUGGING_TIMESCALE
 	#define		WDTCSR_STARTUP				(1<<WDIE) // Prescaled to about 16 mili second interval, enable the watchdog interrupt
 #else	// DEBUGGING_TIMESCALE
-	#define		WDTCSR_STARTUP				(1<<WDIE)|(1<<WDP2)|(1<<WDP1) // Prescaled to about 1 second interval, enable the watchdog interrupt
+	#define		WDTCSR_STARTUP				(1<<WDIE)|(1<<WDP2) // Prescaled to about 1/4 second interval, enable the watchdog interrupt
 #endif	// DEBUGGING_TIMESCALE
 
 #define		TCCR0A_STARTUP					(1<<WGM01) // Select CTC Mode on OCR0A
@@ -138,6 +139,8 @@
  */
 inline static void SetHouseOn(uint8_t HouseNumber);
 inline static void SetHouseOff(uint8_t HouseNumber);
+inline static void ProcessRandomHouseToggle();
+inline static void ProcessPatternStep();
 
 
 uint8_t EEMEM	EE_TargetNumberHousesDayTime = DEF_DAY_TIME_TARGET_NUMBER_HOUSES;
@@ -149,23 +152,34 @@ uint8_t EEMEM	EE_RandomStepDelay = DEF_RANDOM_STEP_DELAY;
 uint8_t EEMEM	EE_PatternData[MAXIMUM_PATTERN_SIZE] = DEF_PATTERN;
 uint8_t	EEMEM	EE_PostDelayTicksNightTime = DEF_NIGHTTIME_TICKS;
 
-uint8_t RAM_PatternStepCount;
-uint8_t RAM_PatternData[MAXIMUM_PATTERN_SIZE];
+uint8_t	WDTPostDecrement; // Decrementer for the WDT interrupt
+uint8_t LastRandom; // Random number, updated at a constant interval (standard config about 125 unique random bytes per second)
+uint8_t	TempRandom; // Temporary memory for creating the random number
+uint8_t	RandomBitCount; // Counter for the random generator
+uint8_t	CurrentTargetHouses; // Number of houses we want turned on at present
+uint8_t	NightTimeDecreaseDecounter; // Decrementer for the slow increase or decrease of target house numbers
 
-uint8_t	WDTPostDecrement;
-uint8_t LastRandom;
-uint8_t	TempRandom;
-uint8_t	RandomBitCount;
-uint8_t	CurrentTargetHouses;
-uint8_t	NightTimeDecreaseDecounter;
+uint8_t	CurrentPatternIndex; // pointer byte to the index of the pattern data
+uint8_t SerialByteCount; //
+uint8_t SerialPacketPayloadLength; // 
+uint8_t SerialInBuffer[SERIAL_BUFFER_SIZE]; // Serial port read (RX) buffer
+uint8_t SerialOutBuffer[SERIAL_BUFFER_SIZE]; // Serial port send (TX) buffer
+uint8_t SerialInBuf_Index; // 
+uint8_t SerialOutBuf_Index; // 
+
+uint8_t	Semaphores; // Byte of processing flags
+
+#define		FLAG_PROCESS_RANDOMHOUSE		0x01
+#define		FLAG_PROCESS_PATTERNSTEP		0x02
 
 int main(void)
 {	
+	// Pattern Data will be handled directly from EE from now on:
 	// Read the configuration bytes:
-	RAM_PatternStepCount = eeprom_read_byte(&EE_PatternStepCount);
-	
+	//RAM_PatternStepCount = eeprom_read_byte(&EE_PatternStepCount);
+	//
 	// Read the pattern data, up to the number of steps in the pattern:
-	eeprom_read_block((void *) RAM_PatternData, (const void*) EE_PatternData, MAXIMUM_PATTERN_SIZE);
+	//eeprom_read_block((void *) RAM_PatternData, (const void*) EE_PatternData, MAXIMUM_PATTERN_SIZE);
 	
 	CurrentTargetHouses = eeprom_read_byte(&EE_TargetNumberHousesDayTime);
 	
@@ -212,10 +226,13 @@ int main(void)
 }
 
 
+/*
+ WDT Interrupt; The main time-base for the patterning and random generation.
+ This routine sets a flag at final time-out, after which the main routine does the bulk
+ of further processing, to keep overhead low.
+ */
 ISR(WDT_OVERFLOW_vect)
 {	
-	uint8_t	NumberOfHouses, temp;
-	
 	WDTPostDecrement--;
 	
 	if( WDTPostDecrement == 0)
@@ -231,93 +248,15 @@ ISR(WDT_OVERFLOW_vect)
 #endif
 			WDTPostDecrement = eeprom_read_byte(&EE_RandomStepDelay);
 			
-	
-			if( (PIN_NIGHTMODE & PORTIN_NIGHTMODE) == PIN_NIGHTMODE )
-			{ // if we're in night mode:
-				temp = eeprom_read_byte(&EE_TargetNumberHousesNightTime);
-				if( CurrentTargetHouses > temp )
-				{ // and the current number of target houses is still larger than the desired number
-					NightTimeDecreaseDecounter--; // decrease the ticker
-					if( NightTimeDecreaseDecounter == 0 )
-					{ // if the ticker reached zero:
-						CurrentTargetHouses--; // decrease the target house number by one and reset the ticker:
-						NightTimeDecreaseDecounter = eeprom_read_byte(&EE_PostDelayTicksNightTime);
-					}
-				}
-			}
-			else
-			{
-				temp = eeprom_read_byte(&EE_TargetNumberHousesDayTime);
-				if( CurrentTargetHouses < temp )
-				{
-					NightTimeDecreaseDecounter--;
-					if( NightTimeDecreaseDecounter == 0 )
-					{
-						CurrentTargetHouses++;
-						NightTimeDecreaseDecounter = eeprom_read_byte(&EE_PostDelayTicksNightTime);
-					}
-				}
-			}
-		
-			// then count the current number of houses (just walk through the defines, progmem aplenty:
-			NumberOfHouses = 0;
-			
-			if( (PORTIN_HOUSE0 & PIN_HOUSE0) == PIN_HOUSE0)
-				NumberOfHouses++;
-			if( (PORTIN_HOUSE1 & PIN_HOUSE1) == PIN_HOUSE1)
-				NumberOfHouses++;
-			if( (PORTIN_HOUSE2 & PIN_HOUSE2) == PIN_HOUSE2)
-				NumberOfHouses++;
-			if( (PORTIN_HOUSE3 & PIN_HOUSE3) == PIN_HOUSE3)
-				NumberOfHouses++;
-			if( (PORTIN_HOUSE4 & PIN_HOUSE4) == PIN_HOUSE4)
-				NumberOfHouses++;
-			if( (PORTIN_HOUSE5 & PIN_HOUSE5) == PIN_HOUSE5)
-				NumberOfHouses++;
-			if( (PORTIN_HOUSE6 & PIN_HOUSE6) == PIN_HOUSE6)
-				NumberOfHouses++;
-			if( (PORTIN_HOUSE7 & PIN_HOUSE7) == PIN_HOUSE7)
-				NumberOfHouses++;
-			if( (PORTIN_HOUSE8 & PIN_HOUSE8) == PIN_HOUSE8)
-				NumberOfHouses++;
-			if( (PORTIN_HOUSE9 & PIN_HOUSE9) == PIN_HOUSE9)
-				NumberOfHouses++;
-			
-			temp = (LastRandom & 0x0F);
-			// first: Let LastRandom (4 bit / lower nibble as generated) determine
-			// whether we compare larger than maximum houses, or larger equal maximum
-			// (even greater range of random behaviour)
-			if( temp > 9 )
-			{			
-				temp -= 6; // lower nibble has a maximum of 15, so when larger than 9, subtracting 6 will 
-							// again give a full range. Fun thing about true random: you can do what you want
-							// mathematically and it'll stay random.
-				if( NumberOfHouses > CurrentTargetHouses )
-				{
-					SetHouseOff(temp);
-				}
-				else
-				{
-					SetHouseOn(temp);
-				}
-			}
-			else
-			{	
-				if( NumberOfHouses >= CurrentTargetHouses )
-				{
-					SetHouseOff(temp);
-				}
-				else
-				{
-					SetHouseOn(temp);
-				}	
-			}
+			ProcessRandomHouseToggle();
+
 #ifdef	RESET_IS_DISABLED
 		}
 		else
 		{ // else we run in pattern mode
 			WDTPostDecrement = eeprom_read_byte(&EE_MainStepDelay);
-			// pattern stuff	(TODO)
+			
+			ProcessPatternStep();
 		}
 #endif
 		
@@ -329,7 +268,14 @@ ISR(WDT_OVERFLOW_vect)
 
 /*
  * Interrupt of Timer0, configured to trigger at an interval by defines.
- *    at each interrupt the random bit inputs will read
+ *    at each interrupt the random bit inputs will read, after 8 reads the 
+ *    generated byte will be copied into "LastRandom" byte.
+ *
+ * The noise was measured at about 230kHz average mean frequency,
+ *   so this can run at up to 100kHz, allowing 12.5 thousand random
+ *   bytes per second, but since we only need them a few times per
+ *   second, we run this at about 1kHz, allowing 125bytes per second
+ *   which then can be used by the WDT interrupt.
  */
 ISR(TIMER0_COMPA_vect)
 {
@@ -387,6 +333,8 @@ ISR(TIMER0_COMPA_vect)
 	}
 	//*/
 }
+
+
 
 
 
@@ -473,4 +421,104 @@ inline static void SetHouseOff(uint8_t HouseNumber)
 			PORTOUT_HOUSE9 &= ~PIN_HOUSE9;
 			break;
 	}
+}
+
+
+/*
+ * Handle the setting or toggling of the houses in random mode:
+ */
+inline static void ProcessRandomHouseToggle()
+{
+	uint8_t	NumberOfHouses, temp;
+	
+	if( (PIN_NIGHTMODE & PORTIN_NIGHTMODE) == PIN_NIGHTMODE )
+	{ // if we're in night mode:
+		temp = eeprom_read_byte(&EE_TargetNumberHousesNightTime);
+		if( CurrentTargetHouses > temp )
+		{ // and the current number of target houses is still larger than the desired number
+			NightTimeDecreaseDecounter--; // decrease the ticker
+			if( NightTimeDecreaseDecounter == 0 )
+			{ // if the ticker reached zero:
+				CurrentTargetHouses--; // decrease the target house number by one and reset the ticker:
+				NightTimeDecreaseDecounter = eeprom_read_byte(&EE_PostDelayTicksNightTime);
+			}
+		}
+	}
+	else
+	{
+		temp = eeprom_read_byte(&EE_TargetNumberHousesDayTime);
+		if( CurrentTargetHouses < temp )
+		{
+			NightTimeDecreaseDecounter--;
+			if( NightTimeDecreaseDecounter == 0 )
+			{
+				CurrentTargetHouses++;
+				NightTimeDecreaseDecounter = eeprom_read_byte(&EE_PostDelayTicksNightTime);
+			}
+		}
+	}
+	
+	// then count the current number of houses (just walk through the defines, progmem aplenty:
+	NumberOfHouses = 0;
+	
+	if( (PORTIN_HOUSE0 & PIN_HOUSE0) == PIN_HOUSE0)
+		NumberOfHouses++;
+	if( (PORTIN_HOUSE1 & PIN_HOUSE1) == PIN_HOUSE1)
+		NumberOfHouses++;
+	if( (PORTIN_HOUSE2 & PIN_HOUSE2) == PIN_HOUSE2)
+		NumberOfHouses++;
+	if( (PORTIN_HOUSE3 & PIN_HOUSE3) == PIN_HOUSE3)
+		NumberOfHouses++;
+	if( (PORTIN_HOUSE4 & PIN_HOUSE4) == PIN_HOUSE4)
+		NumberOfHouses++;
+	if( (PORTIN_HOUSE5 & PIN_HOUSE5) == PIN_HOUSE5)
+		NumberOfHouses++;
+	if( (PORTIN_HOUSE6 & PIN_HOUSE6) == PIN_HOUSE6)
+		NumberOfHouses++;
+	if( (PORTIN_HOUSE7 & PIN_HOUSE7) == PIN_HOUSE7)
+		NumberOfHouses++;
+	if( (PORTIN_HOUSE8 & PIN_HOUSE8) == PIN_HOUSE8)
+		NumberOfHouses++;
+	if( (PORTIN_HOUSE9 & PIN_HOUSE9) == PIN_HOUSE9)
+		NumberOfHouses++;
+	
+	temp = (LastRandom & 0x0F);
+	// first: Let LastRandom (4 bit / lower nibble as generated) determine
+	// whether we compare larger than maximum houses, or larger equal maximum
+	// (even greater range of random behaviour)
+	if( temp > 9 )
+	{
+		temp -= 6; // lower nibble has a maximum of 15, so when larger than 9, subtracting 6 will
+		// again give a full range. Fun thing about true random: you can do what you want
+		// mathematically and it'll stay random.
+		if( NumberOfHouses > CurrentTargetHouses )
+		{
+			SetHouseOff(temp);
+		}
+		else
+		{
+			SetHouseOn(temp);
+		}
+	}
+	else
+	{
+		if( NumberOfHouses >= CurrentTargetHouses )
+		{
+			SetHouseOff(temp);
+		}
+		else
+		{
+			SetHouseOn(temp);
+		}
+	}
+}
+
+
+/*
+ * Process the next pattern step
+ * TODO: Create a pattern stepping process
+ */
+inline static void ProcessPatternStep()
+{
+	
 }
