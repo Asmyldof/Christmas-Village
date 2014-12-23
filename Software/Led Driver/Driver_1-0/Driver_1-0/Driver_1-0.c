@@ -336,28 +336,6 @@ ISR(TIMER0_COMPA_vect)
 	// First move up the current temprandom by one bit:
 	TempRandom = TempRandom << 1;
 
-
-//DEBUG/TEST:
-	if( (PORTIN_RANDOM_POS & PIN_RANDOM_POS) == PIN_RANDOM_POS)
-		TempRandom |= 0x01;
-
-	RandomBitCount++; // increase bit count
-
-	if( RandomBitCount == 8 )
-	{
-		// Reached a full byte here
-		LastRandom = TempRandom;
-		TempRandom = 0;
-		RandomBitCount = 0;
-	}
-//ENDOFDEBUG
-
-
-
-
-/*
-//  This has some patternic behaviour
-// TODO: Fix absolute unbiasing:
 	// To eliminate all bias from the random numbers, invert the behaviour on the odd bytes
 	// (the temperature dependent drift between the WDT and crystal will take care of random
 	//   byte selection)
@@ -390,7 +368,7 @@ ISR(TIMER0_COMPA_vect)
 	
 	RandomBitCount++; // increase bit count
 	
-	if( (RandomBitCount & 0x08) == 0x08 )
+	if( RandomBitCount == 0x08 )
 	{
 		// Reached a full byte here
 		LastRandom = TempRandom;
@@ -398,12 +376,12 @@ ISR(TIMER0_COMPA_vect)
 		// don't reset counter, to keep track of odd/even bytes...
 	}
 	// (( if is 2 bytes less than else if and they do the same: ))
-	if( (RandomBitCount & 0x18) == 0x10 )
+	else if( (RandomBitCount & 0x10) == 0x10 )
 	{
 		// Reached a second full byte here, reset moment for the counter:
-		//RandomBitCount = 0;
 		LastRandom = TempRandom;
 		TempRandom = 0;
+		RandomBitCount = 0;
 	}
 	//*/
 }
