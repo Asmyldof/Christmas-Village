@@ -23,7 +23,8 @@
 #include <avr/interrupt.h>
 #include <avr/eeprom.h>
 
-//#define		DEBUGGING_TIMESCALE // if defined, the WDT times out about 60 times as often (16ms), to turn a minute into 2 seconds.
+#define		DEBUGGING_TIMESCALE // if defined, the WDT times out about 60 times as often (16ms), to turn a minute into 2 seconds.
+// #define	RESET_IS_DISABLED // Define if the reset is going to be disabled
 
 // Default EEPROM Preloads:
 #define		DEF_DAY_TIME_TARGET_NUMBER_HOUSES	8 // during the day the device will slowly increase to this number
@@ -135,7 +136,7 @@
 
 #define		TCCR0A_STARTUP					(1<<WGM01) // Select CTC Mode on OCR0A
 #define		TCCR0B_STARTUP					(1<<CS01)|(1<<CS00) // Prascale by 64
-#define		OCR0A_STARTUP					115 // Overflow at 115 to sample at about 1kHz
+#define		OCR0A_STARTUP					11 // Overflow at 115 to sample at about 1kHz (about 125 truly random numbers per second)
 
 #define		TIMSK_STARTUP					(1<<OCIE0A)
 
@@ -168,21 +169,20 @@ uint8_t	NightTimeDecreaseDecounter;
 
 int main(void)
 {	
-#if 0
 	// Read the configuration bytes:
 	RAM_PatternStepCount = eeprom_read_byte(&EE_PatternStepCount);
 	
 	// Read the pattern data, up to the number of steps in the pattern:
-	eeprom_read_block((void *) RAM_PatternData, &EE_PatternData, RAM_PatternStepCount);
+	eeprom_read_block((void *) RAM_PatternData, (const void*) EE_PatternData, MAXIMUM_PATTERN_SIZE);
 	
-	CurrentTargetHouses = eeprom_read_byte(&EE_TargetNumberHousesDayTime);
+	CurrentTargetHouses = 5;//eeprom_read_byte(&EE_TargetNumberHousesDayTime);
 	
 	// high = random mode, low = pattern
-	if( (PIN_MODE & PORTIN_MODE) == PIN_MODE )
-		WDTPostDecrement = eeprom_read_byte(&EE_RandomStepDelay);
-	else
-		WDTPostDecrement = eeprom_read_byte(&EE_MainStepDelay);
-#endif
+//	if( (PIN_MODE & PORTIN_MODE) == PIN_MODE )
+//		WDTPostDecrement = eeprom_read_byte(&EE_RandomStepDelay);
+//	else
+//		WDTPostDecrement = eeprom_read_byte(&EE_MainStepDelay);
+WDTPostDecrement = 120;
 
 	DDRB = DDRB_STARTUP;
 	DDRD = DDRD_STARTUP;
@@ -215,40 +215,44 @@ int main(void)
 
 ISR(WDT_OVERFLOW_vect)
 {
+
+#if 0 // 1 for debugging
 	PORTB = LastRandom;
-	
-#if 0
+#else	
 	uint8_t	NumberOfHouses, temp;
-	
-	NumberOfHouses = 0;
 	
 	WDTPostDecrement--;
 	
 	if( WDTPostDecrement == 0)
 	{
 		// action!:
+
+// Only if the reset is disabled in the project's hardware can we use it as an input:
+#ifdef	RESET_IS_DISABLED
 		// Check the mode we are running in, to determine what action to take:
 		if( (PIN_MODE & PORTIN_MODE) == PIN_MODE )
 		{ //  If high, we run in random mode
 			// first of all: load the tick delay:
-			WDTPostDecrement = eeprom_read_byte(&EE_RandomStepDelay);
+#endif
+			WDTPostDecrement = 120;//eeprom_read_byte(&EE_RandomStepDelay);
 			
+	#if 0
 			if( (PIN_NIGHTMODE & PORTIN_NIGHTMODE) == PIN_NIGHTMODE )
 			{ // if we're in night mode:
-				temp = eeprom_read_byte(&EE_TargetNumberHousesNightTime);
+				temp = 2;//eeprom_read_byte(&EE_TargetNumberHousesNightTime);
 				if( CurrentTargetHouses > temp )
 				{ // and the current number of target houses is still larger than the desired nuber
 					NightTimeDecreaseDecounter--; // decrease the ticker
 					if( NightTimeDecreaseDecounter == 0 )
 					{ // if the ticker reached zero:
 						CurrentTargetHouses--; // decrease the target house number by one and reset the ticker:
-						NightTimeDecreaseDecounter = eeprom_read_byte(&EE_PostDelayTicksNightTime);
+						NightTimeDecreaseDecounter = 3;//eeprom_read_byte(&EE_PostDelayTicksNightTime);
 					}
 				}
 			}
 			else
 			{
-				temp = eeprom_read_byte(&EE_TargetNumberHousesDayTime);
+				temp = 5;//eeprom_read_byte(&EE_TargetNumberHousesDayTime);
 				if( CurrentTargetHouses < temp )
 				{
 					NightTimeDecreaseDecounter--;
@@ -259,8 +263,10 @@ ISR(WDT_OVERFLOW_vect)
 					}
 				}
 			}
-			
+	#endif	
 			// then count the current number of houses (just walk through the defines, progmem aplenty:
+			NumberOfHouses = 0;
+			
 			if( (PORTIN_HOUSE0 & PIN_HOUSE0) == PIN_HOUSE0)
 				NumberOfHouses++;
 			if( (PORTIN_HOUSE1 & PIN_HOUSE1) == PIN_HOUSE1)
@@ -286,6 +292,10 @@ ISR(WDT_OVERFLOW_vect)
 			// first: Let LastRandom (4 bit / lower nibble as generated) determine
 			// whether we compare larger than maximum houses, or larger equal maximum
 			// (even greater range of random behaviour)
+			
+	#if 1
+		PORTB = NumberOfHouses;
+	#else
 			if( temp > 9 )
 			{
 				temp -= 6; // lower nibble has a maximum of 15, so when larger than 9, subtracting 6 will 
@@ -311,12 +321,15 @@ ISR(WDT_OVERFLOW_vect)
 					SetHouseOn(temp);
 				}
 			}
+	#endif
+#ifdef	RESET_IS_DISABLED
 		}
 		else
 		{ // else we run in pattern mode
 			WDTPostDecrement = eeprom_read_byte(&EE_MainStepDelay);
 			// pattern stuff	(TODO)
 		}
+#endif
 		
 	}
 #endif
@@ -344,7 +357,7 @@ ISR(TIMER0_COMPA_vect)
 		if( (RandomBitCount & 0x01) == 0x01 )
 		{ // odd bits come from positive:
 			if( (PORTIN_RANDOM_POS & PIN_RANDOM_POS) == PIN_RANDOM_POS)
-			TempRandom |= 0x01;
+				TempRandom |= 0x01;
 		}
 		else
 		{ // even bits come from negative
