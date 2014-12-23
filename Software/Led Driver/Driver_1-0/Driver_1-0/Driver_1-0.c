@@ -182,8 +182,10 @@ int main(void)
 //		WDTPostDecrement = eeprom_read_byte(&EE_RandomStepDelay);
 //	else
 //		WDTPostDecrement = eeprom_read_byte(&EE_MainStepDelay);
-WDTPostDecrement = 120;
+	WDTPostDecrement = 60;
 
+	NightTimeDecreaseDecounter = 10;//eeprom_read_byte(&EE_PostDelayTicksNightTime);
+	
 	DDRB = DDRB_STARTUP;
 	DDRD = DDRD_STARTUP;
 	
@@ -214,11 +216,7 @@ WDTPostDecrement = 120;
 
 
 ISR(WDT_OVERFLOW_vect)
-{
-
-#if 0 // 1 for debugging
-	PORTB = LastRandom;
-#else	
+{	
 	uint8_t	NumberOfHouses, temp;
 	
 	WDTPostDecrement--;
@@ -234,36 +232,36 @@ ISR(WDT_OVERFLOW_vect)
 		{ //  If high, we run in random mode
 			// first of all: load the tick delay:
 #endif
-			WDTPostDecrement = 120;//eeprom_read_byte(&EE_RandomStepDelay);
+			WDTPostDecrement = 60;//eeprom_read_byte(&EE_RandomStepDelay);
 			
-	#if 0
+	
 			if( (PIN_NIGHTMODE & PORTIN_NIGHTMODE) == PIN_NIGHTMODE )
 			{ // if we're in night mode:
-				temp = 2;//eeprom_read_byte(&EE_TargetNumberHousesNightTime);
+				temp = 3;//eeprom_read_byte(&EE_TargetNumberHousesNightTime);
 				if( CurrentTargetHouses > temp )
-				{ // and the current number of target houses is still larger than the desired nuber
+				{ // and the current number of target houses is still larger than the desired number
 					NightTimeDecreaseDecounter--; // decrease the ticker
 					if( NightTimeDecreaseDecounter == 0 )
 					{ // if the ticker reached zero:
 						CurrentTargetHouses--; // decrease the target house number by one and reset the ticker:
-						NightTimeDecreaseDecounter = 3;//eeprom_read_byte(&EE_PostDelayTicksNightTime);
+						NightTimeDecreaseDecounter = 10;//eeprom_read_byte(&EE_PostDelayTicksNightTime);
 					}
 				}
 			}
 			else
 			{
-				temp = 5;//eeprom_read_byte(&EE_TargetNumberHousesDayTime);
+				temp = 8;//eeprom_read_byte(&EE_TargetNumberHousesDayTime);
 				if( CurrentTargetHouses < temp )
 				{
 					NightTimeDecreaseDecounter--;
 					if( NightTimeDecreaseDecounter == 0 )
 					{
 						CurrentTargetHouses++;
-						NightTimeDecreaseDecounter = eeprom_read_byte(&EE_PostDelayTicksNightTime);
+						NightTimeDecreaseDecounter = 10;//eeprom_read_byte(&EE_PostDelayTicksNightTime);
 					}
 				}
 			}
-	#endif	
+		
 			// then count the current number of houses (just walk through the defines, progmem aplenty:
 			NumberOfHouses = 0;
 			
@@ -292,12 +290,8 @@ ISR(WDT_OVERFLOW_vect)
 			// first: Let LastRandom (4 bit / lower nibble as generated) determine
 			// whether we compare larger than maximum houses, or larger equal maximum
 			// (even greater range of random behaviour)
-			
-	#if 1
-		PORTB = NumberOfHouses;
-	#else
 			if( temp > 9 )
-			{
+			{			
 				temp -= 6; // lower nibble has a maximum of 15, so when larger than 9, subtracting 6 will 
 							// again give a full range. Fun thing about true random: you can do what you want
 							// mathematically and it'll stay random.
@@ -311,7 +305,7 @@ ISR(WDT_OVERFLOW_vect)
 				}
 			}
 			else
-			{
+			{	
 				if( NumberOfHouses >= CurrentTargetHouses )
 				{
 					SetHouseOff(temp);
@@ -319,9 +313,8 @@ ISR(WDT_OVERFLOW_vect)
 				else
 				{
 					SetHouseOn(temp);
-				}
+				}	
 			}
-	#endif
 #ifdef	RESET_IS_DISABLED
 		}
 		else
@@ -332,7 +325,6 @@ ISR(WDT_OVERFLOW_vect)
 #endif
 		
 	}
-#endif
 	// We can just re-enable the interrupt here, since none of the mentioned risks really apply to us:
 	WDTCR |= (1<<WDIE);
 }
