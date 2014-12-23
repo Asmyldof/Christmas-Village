@@ -169,7 +169,6 @@ ISR(ADC_vect)
 
 	temp = ADCL;
 	
-#if 1
 	if( ADMUX == ADC_ADMUX_SENSOR )
 	{
 		if( temp < SENSOR_ADCVAL_MINIMUM )
@@ -248,7 +247,6 @@ ISR(ADC_vect)
 		
 		ADMUX = ADC_ADMUX_SENSOR;
 	}
-#endif
 }
 
 

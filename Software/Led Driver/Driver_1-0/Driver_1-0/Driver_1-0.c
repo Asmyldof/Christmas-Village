@@ -23,7 +23,7 @@
 #include <avr/interrupt.h>
 #include <avr/eeprom.h>
 
-#define		DEBUGGING_TIMESCALE // if defined, the WDT times out about 60 times as often (16ms), to turn a minute into 2 seconds.
+//#define		DEBUGGING_TIMESCALE // if defined, the WDT times out about 60 times as often (16ms), to turn a minute into 2 seconds.
 // #define	RESET_IS_DISABLED // Define if the reset is going to be disabled
 
 // Default EEPROM Preloads:
@@ -31,9 +31,9 @@
 #define		DEF_NIGHT_TIME_TARGET_NUMBER_HOUSES	3 // at night time mode the device will slowly decrease to this number
 #define		DEF_MINIMUM_NUMBER_OF_HOUSES		0 // used when trying to set a number of houses with serial interface
 #define		DEF_MAIN_STEPDELAY					25 // number of 1s WDT interrupts per step in pattern
-#define		DEF_RANDOM_STEP_DELAY				2//50 // number of 1s WDT interrupts per step in random
-#define		DEF_NIGHTTIME_TICKS					50//80 // number of RandomSteps between target number houses decrements
-#define		DEF_STARTUP_DELAY					5//240 // 240 quarter second startup: 1 minute
+#define		DEF_RANDOM_STEP_DELAY				50 // number of 1s WDT interrupts per step in random
+#define		DEF_NIGHTTIME_TICKS					80 // number of RandomSteps between target number houses decrements
+#define		DEF_STARTUP_DELAY					240 // 240 quarter second startup: 1 minute
 
 #define		DEF_PATTERN_STEP_COUNT				90
 // in the pattern, the first nibble is the house to toggle, the second nibble is the post-delay steps untill the
@@ -169,7 +169,7 @@ uint8_t SerialOutBuffer[SERIAL_BUFFER_SIZE]; // Serial port send (TX) buffer
 uint8_t SerialInBuf_Index; // 
 uint8_t SerialOutBuf_Index; // 
 
-uint8_t	Semaphores; // Byte of processing flags
+uint8_t	MainFlags; // Byte of processing flags
 
 #define		FLAG_PROCESS_RANDOMHOUSE		0x01
 #define		FLAG_PROCESS_PATTERNSTEP		0x02
@@ -201,7 +201,7 @@ int main(void)
 	LastRandom = 0x00;
 	TempRandom = 0x00;
 	RandomBitCount = 0x00;
-	Semaphores = 0x00;
+	MainFlags = 0x00;
 	
 	WDTCR = WDTCSR_STARTUP;
 	
@@ -219,18 +219,18 @@ int main(void)
 		// what kind of, or how many empty assembler directives I sprinkle throughout the code:
 		
 		/*
-		if( (Semaphores & FLAG_PROCESS_PATTERNSTEP) == FLAG_PROCESS_PATTERNSTEP )
+		if( (MainFlags & FLAG_PROCESS_PATTERNSTEP) == FLAG_PROCESS_PATTERNSTEP )
 		{	// If the flag to process a patternstep is set:
 			asm __volatile__ (""); // prevent compiler optimisation
 			// (for some reason the compiler thinks the inline functions are ineffectual?!)
-			Semaphores &= ~FLAG_PROCESS_PATTERNSTEP; // unset the flag
+			MainFlags &= ~FLAG_PROCESS_PATTERNSTEP; // unset the flag
 			ProcessPatternStep();// process a patternstep
 		}
-		if( (Semaphores & FLAG_PROCESS_RANDOMHOUSE) == FLAG_PROCESS_RANDOMHOUSE )
+		if( (MainFlags & FLAG_PROCESS_RANDOMHOUSE) == FLAG_PROCESS_RANDOMHOUSE )
 		{
 			asm __volatile__ (""); // prevent compiler optimisation
 			//PORTB = LastRandom;
-			Semaphores &= ~FLAG_PROCESS_RANDOMHOUSE;
+			MainFlags &= ~FLAG_PROCESS_RANDOMHOUSE;
 			ProcessRandomHouseToggle();
 		}
 		//PORTB = LastRandom;
@@ -261,7 +261,7 @@ ISR(WDT_OVERFLOW_vect)
 #endif
 			WDTPostDecrement = eeprom_read_byte(&EE_RandomStepDelay);
 			ProcessRandomHouseToggle();
-			//Semaphores |= FLAG_PROCESS_RANDOMHOUSE;
+			//MainFlags |= FLAG_PROCESS_RANDOMHOUSE;
 
 #ifdef	RESET_IS_DISABLED
 		}
@@ -269,7 +269,7 @@ ISR(WDT_OVERFLOW_vect)
 		{ // else we run in pattern mode
 			WDTPostDecrement = eeprom_read_byte(&EE_MainStepDelay);
 			ProcessPatternStep();
-			//Semaphores |= FLAG_PROCESS_PATTERNSTEP;
+			//MainFlags |= FLAG_PROCESS_PATTERNSTEP;
 		}
 #endif
 		
@@ -462,43 +462,33 @@ inline static void SetHouseOn(uint8_t HouseNumber)
 		case 0:
 		default:
 			PORTOUT_HOUSE0 |= PIN_HOUSE0;
-			//asm __volatile__ (""); // prevent compiler optimisation
 			break;
 		case 1:
 			PORTOUT_HOUSE1 |= PIN_HOUSE1;
-			//asm (""); // prevent compiler optimisation
 			break;
 		case 2:
 			PORTOUT_HOUSE2 |= PIN_HOUSE2;
-			//asm (""); // prevent compiler optimisation
 			break;
 		case 3:
 			PORTOUT_HOUSE3 |= PIN_HOUSE3;
-			//asm (""); // prevent compiler optimisation
 			break;
 		case 4:
 			PORTOUT_HOUSE4 |= PIN_HOUSE4;
-			//asm (""); // prevent compiler optimisation
 			break;
 		case 5:
 			PORTOUT_HOUSE5 |= PIN_HOUSE5;
-			//asm (""); // prevent compiler optimisation
 			break;
 		case 6:
 			PORTOUT_HOUSE6 |= PIN_HOUSE6;
-			//asm (""); // prevent compiler optimisation
 			break;
 		case 7:
 			PORTOUT_HOUSE7 |= PIN_HOUSE7;
-			//asm (""); // prevent compiler optimisation
 			break;
 		case 8:
 			PORTOUT_HOUSE8 |= PIN_HOUSE8;
-			//asm (""); // prevent compiler optimisation
 			break;
 		case 9:
 			PORTOUT_HOUSE9 |= PIN_HOUSE9;
-			//asm (""); // prevent compiler optimisation
 			break;
 	}
 }
@@ -514,43 +504,33 @@ inline static void SetHouseOff(uint8_t HouseNumber)
 		case 0:
 		default:
 			PORTOUT_HOUSE0 &= ~PIN_HOUSE0;
-			//asm __volatile__ (""); // prevent compiler optimisation
 			break;
 		case 1:
 			PORTOUT_HOUSE1 &= ~PIN_HOUSE1;
-			//asm (""); // prevent compiler optimisation
 			break;
 		case 2:
 			PORTOUT_HOUSE2 &= ~PIN_HOUSE2;
-			//asm (""); // prevent compiler optimisation
 			break;
 		case 3:
 			PORTOUT_HOUSE3 &= ~PIN_HOUSE3;
-			//asm (""); // prevent compiler optimisation
 			break;
 		case 4:
 			PORTOUT_HOUSE4 &= ~PIN_HOUSE4;
-			//asm (""); // prevent compiler optimisation
 			break;
 		case 5:
 			PORTOUT_HOUSE5 &= ~PIN_HOUSE5;
-			//asm (""); // prevent compiler optimisation
 			break;
 		case 6:
 			PORTOUT_HOUSE6 &= ~PIN_HOUSE6;
-			//asm (""); // prevent compiler optimisation
 			break;
 		case 7:
 			PORTOUT_HOUSE7 &= ~PIN_HOUSE7;
-			//asm (""); // prevent compiler optimisation
 			break;
 		case 8:
 			PORTOUT_HOUSE8 &= ~PIN_HOUSE8;
-			//asm (""); // prevent compiler optimisation
 			break;
 		case 9:
 			PORTOUT_HOUSE9 &= ~PIN_HOUSE9;
-			//asm (""); // prevent compiler optimisation
 			break;
 	}
 }
