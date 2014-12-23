@@ -23,7 +23,7 @@
 #include <avr/interrupt.h>
 #include <avr/eeprom.h>
 
-//#define		DEBUGGING_TIMESCALE // if defined, the WDT times out about 60 times as often (16ms), to turn a minute into 2 seconds.
+#define		DEBUGGING_TIMESCALE // if defined, the WDT times out about 60 times as often (16ms), to turn a minute into 2 seconds.
 // #define	RESET_IS_DISABLED // Define if the reset is going to be disabled
 
 // Default EEPROM Preloads:
@@ -31,8 +31,9 @@
 #define		DEF_NIGHT_TIME_TARGET_NUMBER_HOUSES	3 // at night time mode the device will slowly decrease to this number
 #define		DEF_MINIMUM_NUMBER_OF_HOUSES		0 // used when trying to set a number of houses with serial interface
 #define		DEF_MAIN_STEPDELAY					25 // number of 1s WDT interrupts per step in pattern
-#define		DEF_RANDOM_STEP_DELAY				30 // number of 1s WDT interrupts per step in random
+#define		DEF_RANDOM_STEP_DELAY				50 // number of 1s WDT interrupts per step in random
 #define		DEF_NIGHTTIME_TICKS					80 // number of RandomSteps between target number houses decrements
+#define		DEF_STARTUP_DELAY					240 // 240 quarter second startup: 1 minute
 
 #define		DEF_PATTERN_STEP_COUNT				90
 // in the pattern, the first nibble is the house to toggle, the second nibble is the post-delay steps untill the
@@ -151,6 +152,7 @@ uint8_t	EEMEM	EE_MainStepDelay = DEF_MAIN_STEPDELAY;
 uint8_t EEMEM	EE_RandomStepDelay = DEF_RANDOM_STEP_DELAY;
 uint8_t EEMEM	EE_PatternData[MAXIMUM_PATTERN_SIZE] = DEF_PATTERN;
 uint8_t	EEMEM	EE_PostDelayTicksNightTime = DEF_NIGHTTIME_TICKS;
+uint8_t EEMEM	EE_StartupDelay = DEF_STARTUP_DELAY;
 
 uint8_t	WDTPostDecrement; // Decrementer for the WDT interrupt
 uint8_t LastRandom; // Random number, updated at a constant interval (standard config about 125 unique random bytes per second)
@@ -183,17 +185,8 @@ int main(void)
 	
 	CurrentTargetHouses = eeprom_read_byte(&EE_TargetNumberHousesDayTime);
 	
-	// high = random mode, low = pattern
-#ifdef RESET_IS_DISABLED
-	if( (PIN_MODE & PORTIN_MODE) == PIN_MODE )
-#endif
-		WDTPostDecrement = eeprom_read_byte(&EE_RandomStepDelay);
-#ifdef RESET_IS_DISABLED
-	else
-		WDTPostDecrement = eeprom_read_byte(&EE_MainStepDelay);
-#endif
-
-//	WDTPostDecrement = 60;
+	// set startup delay
+	WDTPostDecrement = eeprom_read_byte(&EE_StartupDelay);
 
 	NightTimeDecreaseDecounter = eeprom_read_byte(&EE_PostDelayTicksNightTime);
 	
@@ -215,13 +208,20 @@ int main(void)
 	
 	TIMSK = TIMSK_STARTUP;
 	
-	
-	
 	sei();
 	
 	while(1)
     {
-        //TODO:: Please write your application code 
+		if( (Semaphores & FLAG_PROCESS_PATTERNSTEP) == FLAG_PROCESS_PATTERNSTEP )
+		{	// If the flag to process a patternstep is set:
+			Semaphores &= ~FLAG_PROCESS_PATTERNSTEP; // unset the flag
+			ProcessPatternStep();// process a patternstep
+		}
+		if( (Semaphores & FLAG_PROCESS_RANDOMHOUSE) == FLAG_PROCESS_RANDOMHOUSE )
+		{
+			Semaphores &= ~FLAG_PROCESS_RANDOMHOUSE;
+			ProcessRandomHouseToggle();
+		}
     }
 }
 
@@ -248,7 +248,7 @@ ISR(WDT_OVERFLOW_vect)
 #endif
 			WDTPostDecrement = eeprom_read_byte(&EE_RandomStepDelay);
 			
-			ProcessRandomHouseToggle();
+			Semaphores |= FLAG_PROCESS_RANDOMHOUSE;
 
 #ifdef	RESET_IS_DISABLED
 		}
@@ -256,7 +256,7 @@ ISR(WDT_OVERFLOW_vect)
 		{ // else we run in pattern mode
 			WDTPostDecrement = eeprom_read_byte(&EE_MainStepDelay);
 			
-			ProcessPatternStep();
+			Semaphores |= FLAG_PROCESS_PATTERNSTEP;
 		}
 #endif
 		
@@ -337,91 +337,6 @@ ISR(TIMER0_COMPA_vect)
 
 
 
-
-
-
-/*
- Set the house pointed to on, if not in range, choose 0 (checks, if wanted, should be done before calling)
-*/
-inline static void SetHouseOn(uint8_t HouseNumber)
-{
-	switch(HouseNumber)
-	{
-		case 0:
-		default:
-			PORTOUT_HOUSE0 |= PIN_HOUSE0;
-			break;
-		case 1:
-			PORTOUT_HOUSE1 |= PIN_HOUSE1;
-			break;
-		case 2:
-			PORTOUT_HOUSE2 |= PIN_HOUSE2;
-			break;
-		case 3:
-			PORTOUT_HOUSE3 |= PIN_HOUSE3;
-			break;
-		case 4:
-			PORTOUT_HOUSE4 |= PIN_HOUSE4;
-			break;
-		case 5:
-			PORTOUT_HOUSE5 |= PIN_HOUSE5;
-			break;
-		case 6:
-			PORTOUT_HOUSE6 |= PIN_HOUSE6;
-			break;
-		case 7:
-			PORTOUT_HOUSE7 |= PIN_HOUSE7;
-			break;
-		case 8:
-			PORTOUT_HOUSE8 |= PIN_HOUSE8;
-			break;
-		case 9:
-			PORTOUT_HOUSE9 |= PIN_HOUSE9;
-			break;
-	}
-}
-
-
-/*
- Set the house pointed to off, if not in range, choose 0 (checks, if wanted, should be done before calling)
-*/
-inline static void SetHouseOff(uint8_t HouseNumber)
-{
-	switch(HouseNumber)
-	{
-		case 0:
-		default:
-			PORTOUT_HOUSE0 &= ~PIN_HOUSE0;
-			break;
-		case 1:
-			PORTOUT_HOUSE1 &= ~PIN_HOUSE1;
-			break;
-		case 2:
-			PORTOUT_HOUSE2 &= ~PIN_HOUSE2;
-			break;
-		case 3:
-			PORTOUT_HOUSE3 &= ~PIN_HOUSE3;
-			break;
-		case 4:
-			PORTOUT_HOUSE4 &= ~PIN_HOUSE4;
-			break;
-		case 5:
-			PORTOUT_HOUSE5 &= ~PIN_HOUSE5;
-			break;
-		case 6:
-			PORTOUT_HOUSE6 &= ~PIN_HOUSE6;
-			break;
-		case 7:
-			PORTOUT_HOUSE7 &= ~PIN_HOUSE7;
-			break;
-		case 8:
-			PORTOUT_HOUSE8 &= ~PIN_HOUSE8;
-			break;
-		case 9:
-			PORTOUT_HOUSE9 &= ~PIN_HOUSE9;
-			break;
-	}
-}
 
 
 /*
@@ -521,4 +436,88 @@ inline static void ProcessRandomHouseToggle()
 inline static void ProcessPatternStep()
 {
 	
+}
+
+
+/*
+ Set the house pointed to on, if not in range, choose 0 (checks, if wanted, should be done before calling)
+*/
+inline static void SetHouseOn(uint8_t HouseNumber)
+{
+	switch(HouseNumber)
+	{
+		case 0:
+		default:
+			PORTOUT_HOUSE0 |= PIN_HOUSE0;
+			break;
+		case 1:
+			PORTOUT_HOUSE1 |= PIN_HOUSE1;
+			break;
+		case 2:
+			PORTOUT_HOUSE2 |= PIN_HOUSE2;
+			break;
+		case 3:
+			PORTOUT_HOUSE3 |= PIN_HOUSE3;
+			break;
+		case 4:
+			PORTOUT_HOUSE4 |= PIN_HOUSE4;
+			break;
+		case 5:
+			PORTOUT_HOUSE5 |= PIN_HOUSE5;
+			break;
+		case 6:
+			PORTOUT_HOUSE6 |= PIN_HOUSE6;
+			break;
+		case 7:
+			PORTOUT_HOUSE7 |= PIN_HOUSE7;
+			break;
+		case 8:
+			PORTOUT_HOUSE8 |= PIN_HOUSE8;
+			break;
+		case 9:
+			PORTOUT_HOUSE9 |= PIN_HOUSE9;
+			break;
+	}
+}
+
+
+/*
+ Set the house pointed to off, if not in range, choose 0 (checks, if wanted, should be done before calling)
+*/
+inline static void SetHouseOff(uint8_t HouseNumber)
+{
+	switch(HouseNumber)
+	{
+		case 0:
+		default:
+			PORTOUT_HOUSE0 &= ~PIN_HOUSE0;
+			break;
+		case 1:
+			PORTOUT_HOUSE1 &= ~PIN_HOUSE1;
+			break;
+		case 2:
+			PORTOUT_HOUSE2 &= ~PIN_HOUSE2;
+			break;
+		case 3:
+			PORTOUT_HOUSE3 &= ~PIN_HOUSE3;
+			break;
+		case 4:
+			PORTOUT_HOUSE4 &= ~PIN_HOUSE4;
+			break;
+		case 5:
+			PORTOUT_HOUSE5 &= ~PIN_HOUSE5;
+			break;
+		case 6:
+			PORTOUT_HOUSE6 &= ~PIN_HOUSE6;
+			break;
+		case 7:
+			PORTOUT_HOUSE7 &= ~PIN_HOUSE7;
+			break;
+		case 8:
+			PORTOUT_HOUSE8 &= ~PIN_HOUSE8;
+			break;
+		case 9:
+			PORTOUT_HOUSE9 &= ~PIN_HOUSE9;
+			break;
+	}
 }
