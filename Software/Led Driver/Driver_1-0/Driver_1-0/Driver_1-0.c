@@ -23,7 +23,7 @@
 #include <avr/interrupt.h>
 #include <avr/eeprom.h>
 
-#define		DEBUGGING_TIMESCALE // if defined, the WDT times out about 60 times as often (16ms), to turn a minute into 2 seconds.
+//#define		DEBUGGING_TIMESCALE // if defined, the WDT times out about 60 times as often (16ms), to turn a minute into 2 seconds.
 
 // Default EEPROM Preloads:
 #define		DEF_DAY_TIME_TARGET_NUMBER_HOUSES	8 // during the day the device will slowly increase to this number
@@ -137,7 +137,7 @@
 #define		TCCR0B_STARTUP					(1<<CS01)|(1<<CS00) // Prascale by 64
 #define		OCR0A_STARTUP					115 // Overflow at 115 to sample at about 1kHz
 
-#define		TIMSK_STARTUP					(1<<TOIE0)
+#define		TIMSK_STARTUP					(1<<OCIE0A)
 
 
 /*
@@ -167,7 +167,8 @@ uint8_t	CurrentTargetHouses;
 uint8_t	NightTimeDecreaseDecounter;
 
 int main(void)
-{
+{	
+#if 0
 	// Read the configuration bytes:
 	RAM_PatternStepCount = eeprom_read_byte(&EE_PatternStepCount);
 	
@@ -181,7 +182,8 @@ int main(void)
 		WDTPostDecrement = eeprom_read_byte(&EE_RandomStepDelay);
 	else
 		WDTPostDecrement = eeprom_read_byte(&EE_MainStepDelay);
-	
+#endif
+
 	DDRB = DDRB_STARTUP;
 	DDRD = DDRD_STARTUP;
 	
@@ -213,6 +215,9 @@ int main(void)
 
 ISR(WDT_OVERFLOW_vect)
 {
+	PORTB = LastRandom;
+	
+#if 0
 	uint8_t	NumberOfHouses, temp;
 	
 	NumberOfHouses = 0;
@@ -314,9 +319,9 @@ ISR(WDT_OVERFLOW_vect)
 		}
 		
 	}
-	
+#endif
 	// We can just re-enable the interrupt here, since none of the mentioned risks really apply to us:
-	WDTCR |= (1<WDIE);
+	WDTCR |= (1<<WDIE);
 }
 
 
@@ -324,12 +329,35 @@ ISR(WDT_OVERFLOW_vect)
  * Interrupt of Timer0, configured to trigger at an interval by defines.
  *    at each interrupt the random bit inputs will read
  */
-ISR(TIMER0_OVF_vect)
+ISR(TIMER0_COMPA_vect)
 {
-	
+//	LastRandom++;
+
 	// First move up the current temprandom by one bit:
 	TempRandom = TempRandom << 1;
-	
+
+
+//DEBUG/TEST:
+	if( (PORTIN_RANDOM_POS & PIN_RANDOM_POS) == PIN_RANDOM_POS)
+		TempRandom |= 0x01;
+
+	RandomBitCount++; // increase bit count
+
+	if( RandomBitCount == 8 )
+	{
+		// Reached a full byte here
+		LastRandom = TempRandom;
+		TempRandom = 0;
+		RandomBitCount = 0;
+	}
+//ENDOFDEBUG
+
+
+
+
+/*
+//  This has some patternic behaviour
+// TODO: Fix absolute unbiasing:
 	// To eliminate all bias from the random numbers, invert the behaviour on the odd bytes
 	// (the temperature dependent drift between the WDT and crystal will take care of random
 	//   byte selection)
@@ -338,7 +366,7 @@ ISR(TIMER0_OVF_vect)
 		if( (RandomBitCount & 0x01) == 0x01 )
 		{ // odd bits come from positive:
 			if( (PORTIN_RANDOM_POS & PIN_RANDOM_POS) == PIN_RANDOM_POS)
-				TempRandom |= 0x01;
+			TempRandom |= 0x01;
 		}
 		else
 		{ // even bits come from negative
@@ -370,13 +398,14 @@ ISR(TIMER0_OVF_vect)
 		// don't reset counter, to keep track of odd/even bytes...
 	}
 	// (( if is 2 bytes less than else if and they do the same: ))
-	if( (RandomBitCount & 0x10) == 0x10 )
+	if( (RandomBitCount & 0x18) == 0x10 )
 	{
-		// Reached a full byte here, but also a reset moment for the counter:
+		// Reached a second full byte here, reset moment for the counter:
+		//RandomBitCount = 0;
 		LastRandom = TempRandom;
 		TempRandom = 0;
-		RandomBitCount = 0;
 	}
+	//*/
 }
 
 
