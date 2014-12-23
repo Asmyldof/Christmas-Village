@@ -23,16 +23,16 @@
 #include <avr/interrupt.h>
 #include <avr/eeprom.h>
 
-#define		DEBUGGING_TIMESCALE // if defined, the WDT times out about 60 times as often (16ms), to turn a minute into 2 seconds.
+//#define		DEBUGGING_TIMESCALE // if defined, the WDT times out about 60 times as often (16ms), to turn a minute into 2 seconds.
 // #define	RESET_IS_DISABLED // Define if the reset is going to be disabled
 
 // Default EEPROM Preloads:
 #define		DEF_DAY_TIME_TARGET_NUMBER_HOUSES	8 // during the day the device will slowly increase to this number
-#define		DEF_NIGHT_TIME_TARGET_NUMBER_HOUSES	2 // at night time mode the device will slowly decrease to this number
+#define		DEF_NIGHT_TIME_TARGET_NUMBER_HOUSES	3 // at night time mode the device will slowly decrease to this number
 #define		DEF_MINIMUM_NUMBER_OF_HOUSES		0 // used when trying to set a number of houses with serial interface
 #define		DEF_MAIN_STEPDELAY					25 // number of 1s WDT interrupts per step in pattern
-#define		DEF_RANDOM_STEP_DELAY				60 // number of 1s WDT interrupts per step in random
-#define		DEF_NIGHTTIME_TICKS					10 // number of RandomSteps between target number houses decrements
+#define		DEF_RANDOM_STEP_DELAY				8 // number of 1s WDT interrupts per step in random
+#define		DEF_NIGHTTIME_TICKS					100 // number of RandomSteps between target number houses decrements
 
 #define		DEF_PATTERN_STEP_COUNT				90
 // in the pattern, the first nibble is the house to toggle, the second nibble is the post-delay steps untill the
@@ -58,15 +58,7 @@
 #define		PIN_MODE						(1 << PINA2)
 // if MODE pin = high random mode runs, if MODE pin = low it runs in pattern mode
 
-// PORTB = output 1 through 8
-// PORTD6 = output 9
-// PORTD5 = output 10
-// PORTD4 = Random Bitstream Positive
-// PORTD3 / INT1 = Random Bitstream Negative
-// PORTD2 / INT0 = Night Mode input
-// PORTD0 / RXD = Serial interface
-// PORTD1 / TXD = Serial interface
-// PORTA2 / RESET = Random / Pattern select
+
 #define		PORTIN_NIGHTMODE				PIND
 #define		PIN_NIGHTMODE					(1<<PIND2)
 
@@ -175,16 +167,21 @@ int main(void)
 	// Read the pattern data, up to the number of steps in the pattern:
 	eeprom_read_block((void *) RAM_PatternData, (const void*) EE_PatternData, MAXIMUM_PATTERN_SIZE);
 	
-	CurrentTargetHouses = 5;//eeprom_read_byte(&EE_TargetNumberHousesDayTime);
+	CurrentTargetHouses = eeprom_read_byte(&EE_TargetNumberHousesDayTime);
 	
 	// high = random mode, low = pattern
-//	if( (PIN_MODE & PORTIN_MODE) == PIN_MODE )
-//		WDTPostDecrement = eeprom_read_byte(&EE_RandomStepDelay);
-//	else
-//		WDTPostDecrement = eeprom_read_byte(&EE_MainStepDelay);
-	WDTPostDecrement = 60;
+#ifdef RESET_IS_DISABLED
+	if( (PIN_MODE & PORTIN_MODE) == PIN_MODE )
+#endif
+		WDTPostDecrement = eeprom_read_byte(&EE_RandomStepDelay);
+#ifdef RESET_IS_DISABLED
+	else
+		WDTPostDecrement = eeprom_read_byte(&EE_MainStepDelay);
+#endif
 
-	NightTimeDecreaseDecounter = 10;//eeprom_read_byte(&EE_PostDelayTicksNightTime);
+//	WDTPostDecrement = 60;
+
+	NightTimeDecreaseDecounter = eeprom_read_byte(&EE_PostDelayTicksNightTime);
 	
 	DDRB = DDRB_STARTUP;
 	DDRD = DDRD_STARTUP;
@@ -232,32 +229,32 @@ ISR(WDT_OVERFLOW_vect)
 		{ //  If high, we run in random mode
 			// first of all: load the tick delay:
 #endif
-			WDTPostDecrement = 60;//eeprom_read_byte(&EE_RandomStepDelay);
+			WDTPostDecrement = eeprom_read_byte(&EE_RandomStepDelay);
 			
 	
 			if( (PIN_NIGHTMODE & PORTIN_NIGHTMODE) == PIN_NIGHTMODE )
 			{ // if we're in night mode:
-				temp = 3;//eeprom_read_byte(&EE_TargetNumberHousesNightTime);
+				temp = eeprom_read_byte(&EE_TargetNumberHousesNightTime);
 				if( CurrentTargetHouses > temp )
 				{ // and the current number of target houses is still larger than the desired number
 					NightTimeDecreaseDecounter--; // decrease the ticker
 					if( NightTimeDecreaseDecounter == 0 )
 					{ // if the ticker reached zero:
 						CurrentTargetHouses--; // decrease the target house number by one and reset the ticker:
-						NightTimeDecreaseDecounter = 10;//eeprom_read_byte(&EE_PostDelayTicksNightTime);
+						NightTimeDecreaseDecounter = eeprom_read_byte(&EE_PostDelayTicksNightTime);
 					}
 				}
 			}
 			else
 			{
-				temp = 8;//eeprom_read_byte(&EE_TargetNumberHousesDayTime);
+				temp = eeprom_read_byte(&EE_TargetNumberHousesDayTime);
 				if( CurrentTargetHouses < temp )
 				{
 					NightTimeDecreaseDecounter--;
 					if( NightTimeDecreaseDecounter == 0 )
 					{
 						CurrentTargetHouses++;
-						NightTimeDecreaseDecounter = 10;//eeprom_read_byte(&EE_PostDelayTicksNightTime);
+						NightTimeDecreaseDecounter = eeprom_read_byte(&EE_PostDelayTicksNightTime);
 					}
 				}
 			}
