@@ -156,8 +156,6 @@ uint8_t EEMEM	EE_RandomStepDelay = DEF_RANDOM_STEP_DELAY;
 uint8_t EEMEM	EE_PatternData[MAXIMUM_PATTERN_SIZE] = DEF_PATTERN;
 uint8_t	EEMEM	EE_PostDelayTicksNightTime = DEF_NIGHTTIME_TICKS;
 
-uint8_t	RAM_TargetNumberHousesDayTime;
-uint8_t RAM_MinimumNumberHouses;
 uint8_t RAM_PatternStepCount;
 uint8_t RAM_PatternData[MAXIMUM_PATTERN_SIZE];
 
@@ -171,9 +169,7 @@ uint8_t	NightTimeDecreaseDecounter;
 int main(void)
 {
 	// Read the configuration bytes:
-	//RAM_TargetNumberHousesDayTime = eeprom_read_byte(&EE_TargetNumberHousesDayTime);
-	//RAM_MinimumNumberHouses = eeprom_read_byte(&EE_MinimumNumberHouses);
-	//RAM_PatternStepCount = eeprom_read_byte(&EE_PatternStepCount);
+	RAM_PatternStepCount = eeprom_read_byte(&EE_PatternStepCount);
 	
 	// Read the pattern data, up to the number of steps in the pattern:
 	eeprom_read_block((void *) RAM_PatternData, &EE_PatternData, RAM_PatternStepCount);
