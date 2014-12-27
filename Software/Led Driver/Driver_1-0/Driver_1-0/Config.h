@@ -14,7 +14,7 @@
 
 
 
-#define		MAXIMUM_PATTERN_SIZE			(E2END - 26)  // Take into account the available EEPROM, minus all other configuration bytes
+#define		MAXIMUM_PATTERN_SIZE			(E2END - 16)  // Take into account the available EEPROM, minus all other configuration bytes (version 1.0 / 1.1: 10 bytes)
 #define		SERIAL_BUFFER_SIZE				16  // Size of serial port communication buffers
 #define		RANDOM_STACK_SIZE				16  // can be anything between 2 and whatever still fits the memory
 #define		EEPROM_BLOCK_WRITE_BUFFER		16  // Minimum 16, maximum, whatever fits.

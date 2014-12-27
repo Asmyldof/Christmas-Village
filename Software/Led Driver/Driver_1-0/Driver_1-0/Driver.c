@@ -37,19 +37,25 @@ inline static void ProcessRandomHouseToggle();
 inline static void ProcessPatternStep();
 inline static void SetNoEffectOutputs();
 inline static void StopUSARTTX();
-inline static void StartUSARTTX();
+static void StartUSARTTX();
 inline static void HandleLastCommand();
+static void BuildStandardAckAndTX();
+static uint8_t PopRandomNumber();
+inline static void	TXExnackHouseOutOfBounds();
 
-uint8_t EEMEM	EE_TargetNumberHousesDayTime = DEF_DAY_TIME_TARGET_NUMBER_HOUSES;
-uint8_t EEMEM	EE_MinimumNumberHouses = DEF_MINIMUM_NUMBER_OF_HOUSES;
-uint8_t EEMEM	EE_TargetNumberHousesNightTime = DEF_NIGHT_TIME_TARGET_NUMBER_HOUSES;
-uint8_t EEMEM	EE_PatternStepCount = DEF_PATTERN_STEP_COUNT;
-uint8_t	EEMEM	EE_MainStepDelay = DEF_MAIN_STEPDELAY;
-uint8_t EEMEM	EE_RandomStepDelay = DEF_RANDOM_STEP_DELAY;
+
+uint8_t EEMEM	EE_TargetNumberHousesDayTime = DEF_DAY_TIME_TARGET_NUMBER_HOUSES; // 1
+uint8_t EEMEM	EE_MinimumNumberHouses = DEF_MINIMUM_NUMBER_OF_HOUSES; // 2
+uint8_t EEMEM	EE_TargetNumberHousesNightTime = DEF_NIGHT_TIME_TARGET_NUMBER_HOUSES; // 3
+uint8_t EEMEM	EE_PatternStepCount = DEF_PATTERN_STEP_COUNT; // 4 
+uint8_t	EEMEM	EE_MainStepDelay = DEF_MAIN_STEPDELAY; // 5
+uint8_t EEMEM	EE_RandomStepDelay = DEF_RANDOM_STEP_DELAY; // 6
+uint8_t	EEMEM	EE_PostDelayTicksNightTime = DEF_NIGHTTIME_TICKS; // 7
+uint8_t EEMEM	EE_StartupDelay = DEF_STARTUP_DELAY; // 8
+uint8_t EEMEM	EE_MainFlags = DEF_MAINFLAGS; // 9
+uint8_t EEMEM	EE_UBRR_Startup = DEF_UBRR_VALUE; // 10
+
 uint8_t EEMEM	EE_PatternData[MAXIMUM_PATTERN_SIZE] = DEF_PATTERN;
-uint8_t	EEMEM	EE_PostDelayTicksNightTime = DEF_NIGHTTIME_TICKS;
-uint8_t EEMEM	EE_StartupDelay = DEF_STARTUP_DELAY;
-uint8_t EEMEM	EE_MainFlags = DEF_MAINFLAGS;
 
 uint8_t	WDTPostDecrement; // Decrementer for the WDT interrupt
 uint8_t LastRandom; // Random number, updated at a constant interval (standard config about 125 unique random bytes per second)
@@ -61,9 +67,6 @@ uint8_t	RandomStack[RANDOM_STACK_SIZE];
 uint8_t	EEPROMBlockWriteBuffer[EEPROM_BLOCK_WRITE_BUFFER];
 
 uint8_t	CurrentPatternIndex; // pointer byte to the index of the pattern data
-//uint8_t SerialByteCount; //
-//uint8_t SerialInBuf_Index; // 
-//uint8_t SerialOutBuf_Index; // 
 
 uint8_t	MainFlags; // Byte of main functionality flags
 uint8_t OpFlags; // Operational flags, only read-able externally
@@ -71,15 +74,13 @@ uint8_t OpFlags; // Operational flags, only read-able externally
 uint8_t LastCommand;
 uint8_t CurrentUSARTPacketInCount;
 uint8_t CurrentUSARTPacketOutCount;
-//uint8_t SerialPacketPayloadLength; // 
 uint8_t	TargetUSARTPacketInCount;
 uint8_t SerialInBuffer[SERIAL_BUFFER_SIZE]; // Serial port read (RX) buffer
 uint8_t SerialOutBuffer[SERIAL_BUFFER_SIZE]; // Serial port send (TX) buffer
 
-
-
 int main(void)
 {	
+	uint8_t temp;
 	// Pattern Data will be handled directly from EE from now on:
 	// Read the configuration bytes:
 	//RAM_PatternStepCount = eeprom_read_byte(&EE_PatternStepCount);
@@ -95,6 +96,11 @@ int main(void)
 	NightTimeDecreaseDecounter = eeprom_read_byte(&EE_PostDelayTicksNightTime);
 	
 	MainFlags = eeprom_read_byte(&EE_MainFlags);
+	
+	temp = eeprom_read_byte(&EE_UBRR_Startup);
+	
+	UBRRH = 0x00;
+	UBRRL = temp;
 	
 	
 	DDRB = DDRB_STARTUP;
@@ -244,6 +250,10 @@ ISR(USART0_UDRE_vect)
  */
 ISR(WDT_OVERFLOW_vect)
 {	
+	// if the enable effects flag is not set, do nothing:
+	if( ( MainFlags & FLAG_MAIN_ENABLE_EFFECTS ) != FLAG_MAIN_ENABLE_EFFECTS )
+		return;
+	
 	WDTPostDecrement--;
 	
 	if( WDTPostDecrement == 0)
@@ -361,7 +371,19 @@ ISR(TIMER0_COMPA_vect)
  #
  # ##############################################################################*/
 
-inline static void StartUSARTTX()
+static void BuildThreeByteExackAndTX(uint8_t payload)
+{
+	SerialOutBuffer[0] = CMD_RESPONSE_EXACK;
+	SerialOutBuffer[0] = 1; // followedby one byte
+	SerialOutBuffer[0] = payload;
+}
+
+static uint8_t PopRandomNumber()
+{
+	return 0; // TODO: Add stack-pop once the random number system has been upgraded to a stacked system
+}
+
+static void StartUSARTTX()
 {
 	
 }
@@ -371,9 +393,194 @@ inline static void StopUSARTTX()
 	
 }
 
+inline static void	TXExnackHouseOutOfBounds()
+{
+	CurrentUSARTPacketOutCount = 2;
+	SerialOutBuffer[2] = CMD_RESPONSE_EXNACK; // The output buffer operates in reverse, so to send the NACK first, set it as the last
+	SerialOutBuffer[1] = LastCommand;
+	SerialOutBuffer[0] = CMD_EXNACK_NumberOutOfBounds;
+	LastCommand = 0; // clear command
+	CurrentUSARTPacketInCount = 0; // reset counter
+	StartUSARTTX();
+}
+
+
+static void BuildStandardAckAndTX()
+{
+	CurrentUSARTPacketOutCount = 1;
+	SerialOutBuffer[1] = CMD_RESPONSE_ACK; // The output buffer operates in reverse, so to send the ACK first, set it as the last
+	SerialOutBuffer[0] = LastCommand;
+	LastCommand = 0; // clear command
+	CurrentUSARTPacketInCount = 0; // reset USART counter
+	StartUSARTTX();
+}
+
 inline static void HandleLastCommand()
 {
+	uint8_t Command = LastCommand;
 	
+	switch (Command)
+	{
+		case CMD_EnableEffects:
+			MainFlags |= FLAG_MAIN_ENABLE_EFFECTS;
+			BuildStandardAckAndTX();
+			break;
+		case CMD_DisableEffects:
+			MainFlags &= ~FLAG_MAIN_ENABLE_EFFECTS;
+			BuildStandardAckAndTX();
+			break;
+		case CMD_ReadRandomDelay:
+			BuildThreeByteExackAndTX( eeprom_read_byte(&EE_RandomStepDelay) );
+			break;
+		case CMD_ReadPatternDelay:
+			BuildThreeByteExackAndTX( eeprom_read_byte(&EE_MainStepDelay) );
+			break;
+		case CMD_ReadPatternLength:
+			BuildThreeByteExackAndTX( eeprom_read_byte(&EE_PatternStepCount) );
+			break;
+		case CMD_ReadStartupDelay:
+			BuildThreeByteExackAndTX( eeprom_read_byte(&EE_StartupDelay) );
+			break;
+		case CMD_ReadPostDelayTicksNight:
+			BuildThreeByteExackAndTX( eeprom_read_byte(&EE_PostDelayTicksNightTime) );
+			break;
+		case CMD_ReadMinimumHouses:
+			BuildThreeByteExackAndTX( eeprom_read_byte(&EE_MinimumNumberHouses) );
+			break;
+		case CMD_ReadNightTimeHouses:
+			BuildThreeByteExackAndTX( eeprom_read_byte(&EE_TargetNumberHousesNightTime) );
+			break;
+		case CMD_ReadDayTimeHouses:
+			BuildThreeByteExackAndTX( eeprom_read_byte(&EE_TargetNumberHousesDayTime) );
+			break;
+		case CMD_ReadMainFlags:
+			BuildThreeByteExackAndTX( MainFlags );
+			break;
+		case CMD_GetOperationalFlags:
+			BuildThreeByteExackAndTX( OpFlags );
+			break;
+		case CMD_StoreCurrentUBRR:
+			eeprom_update_byte(&EE_UBRR_Startup, UBRRL); // Compiler should handle the SFRIO -> REG -> EEPROM, even when we replace with our own function later (interrupt driven)
+			BuildStandardAckAndTX();
+			break;
+		case CMD_Ping:
+			CurrentUSARTPacketOutCount = 0;
+			SerialOutBuffer[0] = CMD_RESPONSE_PONG;
+			LastCommand = 0; // clear command
+			CurrentUSARTPacketInCount = 0; // reset USART counter
+			StartUSARTTX();
+			break;
+		case CMD_GetVersion:
+			CurrentUSARTPacketOutCount = 4;
+			SerialOutBuffer[4] = CMD_RESPONSE_EXACK;
+			SerialOutBuffer[3] = 3; // 3 bytes follow
+			SerialOutBuffer[2] = VERSION_MAJOR;
+			SerialOutBuffer[1] = VERSION_MINOR;
+			SerialOutBuffer[0] = VERSION_RELEASE;
+			LastCommand = 0; // clear command
+			CurrentUSARTPacketInCount = 0; // reset USART counter
+			StartUSARTTX();
+			break;
+		case CMD_SetRandomDelay:
+			eeprom_update_byte(&EE_RandomStepDelay, SerialInBuffer[0]);
+			BuildStandardAckAndTX();
+			break;
+		case CMD_SetPatternDelay:
+			eeprom_update_byte(&EE_MainStepDelay, SerialInBuffer[0]);
+			BuildStandardAckAndTX();
+			break;
+		case CMD_SetMinimumHouses:
+			eeprom_update_byte(&EE_MinimumNumberHouses, SerialInBuffer[0]);
+			BuildStandardAckAndTX();
+			break;
+		case CMD_SetNightTimeHouses:
+			eeprom_update_byte(&EE_TargetNumberHousesNightTime, SerialInBuffer[0]);
+			BuildStandardAckAndTX();
+			break;
+		case CMD_SetDayTimeHouses:
+			eeprom_update_byte(&EE_TargetNumberHousesDayTime, SerialInBuffer[0]);
+			BuildStandardAckAndTX();
+			break;
+		case CMD_SetPatternLength:
+			eeprom_update_byte(&EE_PatternStepCount, SerialInBuffer[0]);
+			BuildStandardAckAndTX();
+			break;
+		case CMD_SetStartupDelay:
+			eeprom_update_byte(&EE_StartupDelay, SerialInBuffer[0]);
+			BuildStandardAckAndTX();
+			break;
+		case CMD_SetPostDelayTicksNight:
+			eeprom_update_byte(&EE_PostDelayTicksNightTime, SerialInBuffer[0]);
+			BuildStandardAckAndTX();
+			break;
+		case CMD_SetHouseOn:
+			if( SerialInBuffer[0] <= 9)
+			{
+				SetHouseOn( SerialInBuffer[0] );
+				BuildStandardAckAndTX();
+			}
+			else
+			{
+				TXExnackHouseOutOfBounds();
+			}
+			break;
+		case CMD_SetHouseOff:
+			if( SerialInBuffer[0] <= 9)
+			{
+				SetHouseOff( SerialInBuffer[0] );
+				BuildStandardAckAndTX();
+			}
+			else
+			{
+				TXExnackHouseOutOfBounds();
+			}
+			break;
+		case CMD_SetUBRR:
+			UBRRH = 0x00; // make sure the 16bit high byte is zero
+			UBRRL = SerialInBuffer[0];
+			BuildStandardAckAndTX();
+			break;
+		case CMD_SetAndStoreMainFlags:
+			MainFlags = SerialInBuffer[0];
+			eeprom_update_byte(&EE_MainFlags, MainFlags);
+			BuildStandardAckAndTX();
+			break;
+		case CMD_GetRandomNumber:
+			CurrentUSARTPacketOutCount = 2;
+			SerialOutBuffer[2] = CMD_RESPONSE_EXACK;
+			SerialOutBuffer[1] = 1; // 1 byte follows
+			SerialOutBuffer[0] = PopRandomNumber();
+			LastCommand = 0; // clear command
+			CurrentUSARTPacketInCount = 0; // reset USART counter
+			StartUSARTTX();
+			break;
+		case CMD_ReadPatternData:
+			
+			break;
+		case CMD_GetDeviceSignature:
+			
+			break;
+		case CMD_SetPatternData:
+			
+			break;
+		case CMD_SetPatternDataContinued:
+			
+			break;
+		case CMD_GoToBootloader:
+			
+			break;	
+		default:
+			// Not in this list = Not recognised:
+			CurrentUSARTPacketOutCount = 1;
+			SerialOutBuffer[1] = CMD_RESPONSE_NACK; // The output buffer operates in reverse, so to send the NACK first, set it as the last
+			SerialOutBuffer[0] = Command;
+			LastCommand = 0; // clear command
+			CurrentUSARTPacketInCount = 0; // reset counter
+			StartUSARTTX();
+			break;
+	}
+	
+	// StartUSARTTX();
 }
 
 /*
