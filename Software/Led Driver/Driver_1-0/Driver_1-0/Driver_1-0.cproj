@@ -37,7 +37,8 @@
         </dependencies>
       </framework-data>
     </AsfFrameworkConfig>
-    <avrtool>com.atmel.avrdbg.tool.ispmk2</avrtool>
+    <avrtool>
+    </avrtool>
     <com_atmel_avrdbg_tool_simulator>
       <ToolOptions xmlns="">
         <InterfaceProperties>
@@ -52,7 +53,8 @@
       <ToolName xmlns="">Simulator</ToolName>
     </com_atmel_avrdbg_tool_simulator>
     <preserveEEPROM>True</preserveEEPROM>
-    <avrtoolinterface>ISP</avrtoolinterface>
+    <avrtoolinterface>
+    </avrtoolinterface>
     <com_atmel_avrdbg_tool_ispmk2>
       <ToolOptions>
         <InterfaceProperties>
@@ -121,7 +123,16 @@
     </ToolchainSettings>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Driver_1-0.c">
+    <Compile Include="Config.h">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="Driver.c">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="EEPROM-Defaults.h">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="Flags.h">
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="USART-Commands.h">

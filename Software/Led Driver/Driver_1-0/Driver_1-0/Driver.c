@@ -23,121 +23,9 @@
 #include <avr/interrupt.h>
 #include <avr/eeprom.h>
 #include "USART-Commands.h"
-
-//#define		DEBUGGING_TIMESCALE // if defined, the WDT times out about 60 times as often (16ms), to turn a minute into 2 seconds.
-// #define	RESET_IS_DISABLED // Define if the reset is going to be disabled
-
-#define		VERSION_MAJOR						1
-#define		VERSION_MINOR						0
-#define		VERSION_RELEASE						6
-
-// Default EEPROM Preloads:
-#define		DEF_DAY_TIME_TARGET_NUMBER_HOUSES	8 // during the day the device will slowly increase to this number
-#define		DEF_NIGHT_TIME_TARGET_NUMBER_HOUSES	3 // at night time mode the device will slowly decrease to this number
-#define		DEF_MINIMUM_NUMBER_OF_HOUSES		0 // used when trying to set a number of houses with serial interface
-#define		DEF_MAIN_STEPDELAY					25 // number of 1s WDT interrupts per step in pattern
-#define		DEF_RANDOM_STEP_DELAY				50 // number of 1s WDT interrupts per step in random
-#define		DEF_NIGHTTIME_TICKS					80 // number of RandomSteps between target number houses decrements
-#define		DEF_STARTUP_DELAY					240 // 240 quarter second startup: 1 minute
-
-#define		DEF_PATTERN_STEP_COUNT				90
-// in the pattern, the first nibble is the house to toggle, the second nibble is the post-delay steps untill the
-//   next action is taken.
-#define		DEF_PATTERN							{	0x11, 0xAF, 0x06, 0xA3, 0x21, 0x02, 0x95, 0x11, 0x50, 0x13, \
-													0x45, 0x1B, 0x23, 0x54, 0xA2, 0x15, 0x86, 0x27, 0x19, 0x28, \
-													0x23, 0x71, 0x44, 0x26, 0x63, 0x66, 0xA7, 0x36, 0x98, 0x7F, \
-													0x87, 0x05, 0x38, 0x97, 0x77, 0x83, 0x18, 0x43, 0x56, 0x5C, \
-													0x43, 0x24, 0x72, 0x4A, 0x23, 0x49, 0x39, 0x50, 0x42, 0x96, \
-													0x51, 0x59, 0x94, 0x63, 0x15, 0x50, 0x81, 0x67, 0x74, 0x22, \
-													0x70, 0x88, 0x3C, 0x72, 0x83, 0x9A, 0x02, 0x72, 0x39, 0x47, \
-													0x93, 0xA1, 0xA4, 0x38, 0x92, 0xAE, 0x13, 0x8D, 0x24, 0x90, \
-													0x17, 0x12, 0x27, 0x16, 0x31, 0x24, 0x34, 0x95, 0xA3, 0x62, \
-													}
-
-#define		MAXIMUM_PATTERN_SIZE			95  // Take into account the stack and 8 bytes of RAM used in general
-#define		SERIAL_BUFFER_SIZE				16  // Size of serial port communication buffers
-
-#define		EEPROM_PATTERN_HOUSENUMMASK		0xF0
-#define		EEPROM_PATTERN_DELAYTIMMASK		0x0F
-
-// Location of the mode pin (project hardware: PortA2 / Reset):
-#define		PORTIN_MODE						PINA
-#define		PIN_MODE						(1 << PINA2)
-// if MODE pin = high random mode runs, if MODE pin = low it runs in pattern mode
-
-
-#define		PORTIN_NIGHTMODE				PIND
-#define		PIN_NIGHTMODE					(1<<PIND2)
-
-
-// LED outputs:
-#define		PORTOUT_HOUSE0					PORTB
-#define		PORTIN_HOUSE0					PINB
-#define		PIN_HOUSE0						(1<<PORTB7)
-
-#define		PORTOUT_HOUSE1					PORTB
-#define		PORTIN_HOUSE1					PINB
-#define		PIN_HOUSE1						(1<<PORTB6)
-
-#define		PORTOUT_HOUSE2					PORTB
-#define		PORTIN_HOUSE2					PINB
-#define		PIN_HOUSE2						(1<<PORTB5)
-
-#define		PORTOUT_HOUSE3					PORTB
-#define		PORTIN_HOUSE3					PINB
-#define		PIN_HOUSE3						(1<<PORTB4)
-
-#define		PORTOUT_HOUSE4					PORTB
-#define		PORTIN_HOUSE4					PINB
-#define		PIN_HOUSE4						(1<<PORTB3)
-
-#define		PORTOUT_HOUSE5					PORTB
-#define		PORTIN_HOUSE5					PINB
-#define		PIN_HOUSE5						(1<<PORTB2)
-
-#define		PORTOUT_HOUSE6					PORTB
-#define		PORTIN_HOUSE6					PINB
-#define		PIN_HOUSE6						(1<<PORTB1)
-
-#define		PORTOUT_HOUSE7					PORTB
-#define		PORTIN_HOUSE7					PINB
-#define		PIN_HOUSE7						(1<<PORTB0)
-
-#define		PORTOUT_HOUSE8					PORTD
-#define		PORTIN_HOUSE8					PIND
-#define		PIN_HOUSE8						(1<<PORTD6)
-
-#define		PORTOUT_HOUSE9					PORTD
-#define		PORTIN_HOUSE9					PIND
-#define		PIN_HOUSE9						(1<<PORTD5)
-
-
-#define		PORTIN_RANDOM_POS				PIND
-#define		PIN_RANDOM_POS					(1<<PIND4)
-#define		PORTIN_RANDOM_NEG				PIND
-#define		PIN_RANDOM_NEG					(1<<PIND3)
-
-
-// Start-up values for the port and DDR registers:
-#define		DDRA_STARTUP					0x00
-#define		DDRB_STARTUP					0xFF
-#define		DDRD_STARTUP					0x60 | (1 << PORTD1) // PORTD1 = TXD pin, make high too.
-
-#define		PORTA_STARTUP					0x00
-#define		PORTB_STARTUP					0xFF
-#define		PORTD_STARTUP					0x60
-
-#ifdef	DEBUGGING_TIMESCALE
-	#define		WDTCSR_STARTUP				(1<<WDIE) // Prescaled to about 16 mili second interval, enable the watchdog interrupt
-#else	// DEBUGGING_TIMESCALE
-	#define		WDTCSR_STARTUP				(1<<WDIE)|(1<<WDP2) // Prescaled to about 1/4 second interval, enable the watchdog interrupt
-#endif	// DEBUGGING_TIMESCALE
-
-#define		TCCR0A_STARTUP					(1<<WGM01) // Select CTC Mode on OCR0A
-#define		TCCR0B_STARTUP					(1<<CS01)|(1<<CS00) // Prascale by 64
-#define		OCR0A_STARTUP					11 // Overflow at 115 to sample at about 1kHz (about 125 truly random numbers per second)
-
-#define		TIMSK_STARTUP					(1<<OCIE0A)
+#include "EEPROM-Defaults.h"
+#include "Config.h"
+#include "Flags.h" // normally included through others as well, but since this project has well designed headers, that's no problem, and this adds clarity.
 
 
 /*
@@ -147,7 +35,10 @@ inline static void SetHouseOn(uint8_t HouseNumber);
 inline static void SetHouseOff(uint8_t HouseNumber);
 inline static void ProcessRandomHouseToggle();
 inline static void ProcessPatternStep();
-
+inline static void SetNoEffectOutputs();
+inline static void StopUSARTTX();
+inline static void StartUSARTTX();
+inline static void HandleLastCommand();
 
 uint8_t EEMEM	EE_TargetNumberHousesDayTime = DEF_DAY_TIME_TARGET_NUMBER_HOUSES;
 uint8_t EEMEM	EE_MinimumNumberHouses = DEF_MINIMUM_NUMBER_OF_HOUSES;
@@ -158,6 +49,7 @@ uint8_t EEMEM	EE_RandomStepDelay = DEF_RANDOM_STEP_DELAY;
 uint8_t EEMEM	EE_PatternData[MAXIMUM_PATTERN_SIZE] = DEF_PATTERN;
 uint8_t	EEMEM	EE_PostDelayTicksNightTime = DEF_NIGHTTIME_TICKS;
 uint8_t EEMEM	EE_StartupDelay = DEF_STARTUP_DELAY;
+uint8_t EEMEM	EE_MainFlags = DEF_MAINFLAGS;
 
 uint8_t	WDTPostDecrement; // Decrementer for the WDT interrupt
 uint8_t LastRandom; // Random number, updated at a constant interval (standard config about 125 unique random bytes per second)
@@ -165,19 +57,26 @@ uint8_t	TempRandom; // Temporary memory for creating the random number
 uint8_t	RandomBitCount; // Counter for the random generator
 uint8_t	CurrentTargetHouses; // Number of houses we want turned on at present
 uint8_t	NightTimeDecreaseDecounter; // Decrementer for the slow increase or decrease of target house numbers
+uint8_t	RandomStack[RANDOM_STACK_SIZE];
+uint8_t	EEPROMBlockWriteBuffer[EEPROM_BLOCK_WRITE_BUFFER];
 
 uint8_t	CurrentPatternIndex; // pointer byte to the index of the pattern data
-uint8_t SerialByteCount; //
-uint8_t SerialPacketPayloadLength; // 
+//uint8_t SerialByteCount; //
+//uint8_t SerialInBuf_Index; // 
+//uint8_t SerialOutBuf_Index; // 
+
+uint8_t	MainFlags; // Byte of main functionality flags
+uint8_t OpFlags; // Operational flags, only read-able externally
+
+uint8_t LastCommand;
+uint8_t CurrentUSARTPacketInCount;
+uint8_t CurrentUSARTPacketOutCount;
+//uint8_t SerialPacketPayloadLength; // 
+uint8_t	TargetUSARTPacketInCount;
 uint8_t SerialInBuffer[SERIAL_BUFFER_SIZE]; // Serial port read (RX) buffer
 uint8_t SerialOutBuffer[SERIAL_BUFFER_SIZE]; // Serial port send (TX) buffer
-uint8_t SerialInBuf_Index; // 
-uint8_t SerialOutBuf_Index; // 
 
-uint8_t	MainFlags; // Byte of processing flags
 
-#define		FLAG_PROCESS_RANDOMHOUSE		0x01
-#define		FLAG_PROCESS_PATTERNSTEP		0x02
 
 int main(void)
 {	
@@ -195,16 +94,21 @@ int main(void)
 
 	NightTimeDecreaseDecounter = eeprom_read_byte(&EE_PostDelayTicksNightTime);
 	
+	MainFlags = eeprom_read_byte(&EE_MainFlags);
+	
+	
 	DDRB = DDRB_STARTUP;
 	DDRD = DDRD_STARTUP;
 	
-	PORTB = PORTB_STARTUP;
-	PORTD = PORTD_STARTUP;
+	SetNoEffectOutputs();
 	
 	LastRandom = 0x00;
 	TempRandom = 0x00;
 	RandomBitCount = 0x00;
-	MainFlags = 0x00;
+	OpFlags = 0x00;
+	LastCommand = 0x00;
+	CurrentUSARTPacketInCount = 0x00;
+	CurrentUSARTPacketOutCount = 0x00;
 	
 	WDTCR = WDTCSR_STARTUP;
 	
@@ -238,8 +142,99 @@ int main(void)
 		}
 		//PORTB = LastRandom;
 		//*/
+		if( ( OpFlags & FLAG_OP_USART_HANDLE_COMMAND ) == FLAG_OP_USART_HANDLE_COMMAND )
+		{
+			HandleLastCommand();	
+		}
     }
 }
+
+
+
+
+
+
+
+/* upon completed receipt of a byte: */
+ISR(USART0_RX_vect)
+{
+	uint8_t	USART_Status = UCSRA;
+	uint8_t CurrentByte = UDR;
+	
+	if( ( USART_Status & (1<<FE|1<<UPE) ) != 0 )
+	{
+		// If there was a framing error or a parity error, ignore and return (low-level idle line)
+		return;
+	}
+	
+	if( CurrentUSARTPacketInCount == 0 )
+	{ 
+		if( CurrentByte != 0 )
+		{ // Command = 0 is illegal, not defined, hard-coded, not allowed, not ever, gives no response (idle line)
+			LastCommand = CurrentByte;
+			if( ( CurrentByte & CMD_MASK_CommandSize ) == CMD_MASK_SingleByte )
+			{ // The new command is a single-byte one, so decode and respond through mainloop right away:
+				OpFlags |= FLAG_OP_USART_HANDLE_COMMAND;
+				// Do not increase the counter, since the next byte will be a command again.
+			}
+			else if( ( CurrentByte & CMD_MASK_CommandSize ) == CMD_MASK_TwoByteCMD )
+			{ // New command is a two byte command
+				CurrentUSARTPacketInCount++;
+				TargetUSARTPacketInCount = 1;
+			}
+			else if( ( CurrentByte & CMD_MASK_CommandSize ) == CMD_MASK_MultiByte )
+			{
+				CurrentUSARTPacketInCount++;
+				TargetUSARTPacketInCount = 2; // Set the target to two for now, we'll update it when we know more.
+			}
+			else
+			{ // send a NACK: Command 
+				CurrentUSARTPacketOutCount = 1;
+				SerialOutBuffer[1] = CMD_RESPONSE_NACK; // The output buffer operates in reverse, so to send the NACK first, set it as the last
+				SerialOutBuffer[0] = CurrentByte;
+				LastCommand = 0; // clear command
+				CurrentUSARTPacketInCount = 0; // reset counter
+				StartUSARTTX();
+			}
+		}
+		// else do nothing: Ignore zero command-bytes as high-level idle line.
+	}
+	else if( CurrentUSARTPacketInCount == 1 )
+	{ // if we receive the second byte:
+		if( TargetUSARTPacketInCount == 1 )
+		{ // if we wanted only two bytes, store the byte, do nothing further and handle command:
+			SerialInBuffer[0] = CurrentByte;
+			OpFlags |= FLAG_OP_USART_HANDLE_COMMAND;
+		}
+		else
+		{ // if we expect more than two bytes, the second bytes defines how many bytes we expect, excluding the command byte:
+			TargetUSARTPacketInCount = CurrentByte + 1; // because we started at index 0, where the payload number is offset 1, we only need to add 1.
+			CurrentUSARTPacketInCount++;
+		}
+	}
+	else
+	{
+		SerialInBuffer[CurrentUSARTPacketInCount - 2] = CurrentByte;
+		if( CurrentUSARTPacketInCount == TargetUSARTPacketInCount )
+		{ // reached the end of the packet, handle command:
+			OpFlags |= FLAG_OP_USART_HANDLE_COMMAND;
+		}
+		else
+		{
+			CurrentUSARTPacketInCount++;
+		}
+	}
+}
+
+/* upon data register empty: */
+ISR(USART0_UDRE_vect)
+{
+	
+	// if complete:
+	StopUSARTTX();
+}
+
+
 
 
 /*
@@ -350,18 +345,45 @@ ISR(TIMER0_COMPA_vect)
 	//*/
 }
 
-/* upon completed receipt of a byte: */
-ISR(USART0_RX_vect)
+
+
+
+
+
+
+
+
+
+
+/* ##############################################################################
+ #
+ #   Start of internal static functions;;
+ #
+ # ##############################################################################*/
+
+inline static void StartUSARTTX()
 {
 	
 }
 
-/* upon data register empty: */
-ISR(USART0_UDRE_vect)
+inline static void StopUSARTTX()
 {
 	
 }
 
+inline static void HandleLastCommand()
+{
+	
+}
+
+/*
+ * Process the next pattern step
+ * TODO: Create a pattern stepping process
+ */
+inline static void ProcessPatternStep()
+{
+	asm(""); // prevent compiler optimisation
+}
 
 
 /*
@@ -455,16 +477,6 @@ inline static void ProcessRandomHouseToggle()
 
 
 /*
- * Process the next pattern step
- * TODO: Create a pattern stepping process
- */
-inline static void ProcessPatternStep()
-{
-	asm(""); // prevent compiler optimisation
-}
-
-
-/*
  Set the house pointed to on, if not in range, choose 0 (checks, if wanted, should be done before calling)
 */
 inline static void SetHouseOn(uint8_t HouseNumber)
@@ -544,5 +556,24 @@ inline static void SetHouseOff(uint8_t HouseNumber)
 		case 9:
 			PORTOUT_HOUSE9 &= ~PIN_HOUSE9;
 			break;
+	}
+}
+
+
+/*
+Sets the port output pins to the values as desired by the flagbyte, can be called to inferfere with any pattern or random
+but is intended to switch the houses on/off when patterning is turned on or off
+*/
+inline static void SetNoEffectOutputs()
+{
+	if( (MainFlags & FLAG_MAIN_NOEFFECT_HOUSE_STATES_ON) == FLAG_MAIN_NOEFFECT_HOUSE_STATES_ON )
+	{
+		PORTB |= PORTB_STARTUP_ALL_ON; // For compatibility with other pin functionality, use or-is
+		PORTD |= PORTD_STARTUP_ALL_ON; // to only update the desired bits
+	}
+	else
+	{
+		PORTB &= ~PORTB_STARTUP_ALL_ON; // For compatibility with other pin functionality, use and-is
+		PORTD &= ~PORTD_STARTUP_ALL_ON; // to only update the desired bits
 	}
 }
