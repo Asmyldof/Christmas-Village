@@ -22,9 +22,14 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <avr/eeprom.h>
+#include "USART-Commands.h"
 
 //#define		DEBUGGING_TIMESCALE // if defined, the WDT times out about 60 times as often (16ms), to turn a minute into 2 seconds.
 // #define	RESET_IS_DISABLED // Define if the reset is going to be disabled
+
+#define		VERSION_MAJOR						1
+#define		VERSION_MINOR						0
+#define		VERSION_RELEASE						6
 
 // Default EEPROM Preloads:
 #define		DEF_DAY_TIME_TARGET_NUMBER_HOUSES	8 // during the day the device will slowly increase to this number
@@ -176,8 +181,6 @@ uint8_t	MainFlags; // Byte of processing flags
 
 int main(void)
 {	
-	uint8_t	temp;
-	
 	// Pattern Data will be handled directly from EE from now on:
 	// Read the configuration bytes:
 	//RAM_PatternStepCount = eeprom_read_byte(&EE_PatternStepCount);
@@ -347,8 +350,17 @@ ISR(TIMER0_COMPA_vect)
 	//*/
 }
 
+/* upon completed receipt of a byte: */
+ISR(USART0_RX_vect)
+{
+	
+}
 
-
+/* upon data register empty: */
+ISR(USART0_UDRE_vect)
+{
+	
+}
 
 
 
