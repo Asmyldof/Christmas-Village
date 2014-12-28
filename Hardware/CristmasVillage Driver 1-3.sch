@@ -243,7 +243,7 @@
 <wire x1="-3.5" y1="-0.15" x2="-3.9" y2="-0.15" width="0.127" layer="51"/>
 <wire x1="-3.9" y1="-0.15" x2="-3.9" y2="0.25" width="0.127" layer="51"/>
 <wire x1="-3.9" y1="0.25" x2="-3.4" y2="0.25" width="0.127" layer="51"/>
-<pad name="P$1" x="0" y="0" drill="3.8" diameter="3.8"/>
+<pad name="P$1" x="0" y="0" drill="3.65" diameter="3.95"/>
 </package>
 </packages>
 <symbols>
@@ -7038,7 +7038,7 @@ Updated 01/16/2004&lt;/i&gt;&lt;/h4&gt;</description>
 <junction x="154.94" y="50.8"/>
 </segment>
 </net>
-<net name="N$4" class="0">
+<net name="RX" class="0">
 <segment>
 <pinref part="CN3-SERIAL" gate="G$1" pin="2"/>
 <wire x1="193.04" y1="20.32" x2="198.12" y2="20.32" width="0.1524" layer="91"/>
@@ -7047,7 +7047,7 @@ Updated 01/16/2004&lt;/i&gt;&lt;/h4&gt;</description>
 <wire x1="198.12" y1="33.02" x2="195.58" y2="33.02" width="0.1524" layer="91"/>
 </segment>
 </net>
-<net name="N$5" class="0">
+<net name="TX" class="0">
 <segment>
 <pinref part="CN3-SERIAL" gate="G$1" pin="3"/>
 <wire x1="193.04" y1="17.78" x2="200.66" y2="17.78" width="0.1524" layer="91"/>
