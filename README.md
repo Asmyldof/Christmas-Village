@@ -56,6 +56,7 @@ Break (the houses are automatically dimmed by the sensor and the light sensor su
 December 27th 2014:
 ----
 Continuation of the development: Adding Serial interface, interleaved with shopping, cleaning and such.
+(Note, however, that the hardware is not available at this point, so all code is written and tested on paper only, undoubtedly leaving bugs to be discovered when the hardware is back again for a while.)
 
 December 28th 2014 (2:30 AM):
 ----
