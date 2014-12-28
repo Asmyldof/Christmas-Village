@@ -3,6 +3,9 @@ Christmas-Village
 A two cheap microcontroller project to control which of ten channels is on or off based on a true-random generator (with guaranteed no bias), while also controlling the general brightness either manually or from a light sensor.
 The remainder of this ReadMe will be written as a chronological logbook, to show the speed at which the development was done.
 
+How a missing connector inspired me to make a present in stead buying one:
+=================
+
 Early December 2013:
 -----
 I glue some LED strips into the crockery Christmas Village houses my parents bought and supplied father with some pre-fab connectors and cables. That year the houses were lit at a fraction of the cost of high-watage incandescent bulbs from the supplier. (Where the LEDstrip uses less than 1/10th the power).
