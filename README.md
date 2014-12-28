@@ -5,7 +5,7 @@ The remainder of this ReadMe will be written as a chronological logbook, to show
 
 Early December 2013:
 -----
-I glue some LED strips into the crockery Christmas Village houses my parents bought and supplied father with some pre-fab connectors and cables. That year the houses were lit a a fraction of the cost of high-watage incandescent bulbs from the supplier. (Where the LEDstrip uses less than 1/10th the power).
+I glue some LED strips into the crockery Christmas Village houses my parents bought and supplied father with some pre-fab connectors and cables. That year the houses were lit at a fraction of the cost of high-watage incandescent bulbs from the supplier. (Where the LEDstrip uses less than 1/10th the power).
 
 Early January 2014:
 -----
@@ -19,9 +19,10 @@ December 20th 2014:
 -----
 I start designing a PCB to control the houses with the shortest-path-available method, still considering reusability, and thus splitting the dimmer and the 10 channel on/off controller into two separate, relatively cheap Atmel AVRs.
 The plan:
+* First and foremost: Use only items from my direct stock (My stock is large, very large even, but not limitless), so it can be built the same weekend.
 * Get an ATTiny10 to do the dimming and keeping an eye on the light/dark situation
-* Get an ATTiny4313 to control the channels on/off, including a true-random generator without bias
-* Add a FM noise source for very-high-speed random generation (for future plans)
+* Get an ATTiny4313 to control the channels on/off, including a true-random generator without bias (more on this later)
+* Add a FM noise source for very-high-speed random generation (for future plans) (see below why that's not in there anymore)
 
 December 21st 2014 (late night):
 -----
@@ -37,19 +38,19 @@ The ATTiny10 software is ready for testing, but a paid projct takes temporary pr
 
 December 22nd 2014 (late evening):
 -----
-The ATTiny10 is working and installed, time to go bring what is done as a present to the parental home and continue there later.
+The ATTiny10 is working and installed, time to go bring what is done as a present to the parental home and continue programming there later.
 
 December 22nd/23rd 2014 (midnight and later):
 -----
 Development of the random control is well underway (all chips were already mounted before ATTiny10 testing started).
 
-December 23rd 2014 (approx 4:30 AM):
+December 23rd 2014 (approx 5:30 AM):
 -----
-Random control of the houses works, time to decouple the programmer and go to bed, allowing the random behaviour as a surprise.
+Random control of the houses works, time to decouple the programmer and go to bed, allowing the random behaviour as a surprise for the folks that'll wake up soon.
 
-December 23rd (4:30 AM) through december 26th:
+December 23rd (5:30 AM) through december 26th:
 -----
-Break (the houses are automatically dimmed by the sensor and the light sensor sucessfully influence the number of houses on - more on during the day time than during the night time - and the random behaviour works, that was the target for christmas.
+Break (the houses are automatically dimmed by the sensor and the light sensor sucessfully influences the number of houses on - more on during the day time than during the night time - and the random behaviour works, that was the target for christmas.
 (However, some work had already been done for other functionality, including patterns and EEPROM re-configurable settings, which should later be read/write-able through the serial interface (quick after thought in the hardware design).
 
 December 27th 2014:
