@@ -17,16 +17,19 @@
 // Serial Baud = 115.2k
 // U2X = 0
 // UBRR = 3
+// Set to: 1 start bit, 2 stop bits, odd parity, 8 data bits
 
 #ifndef __LED_DRIVER_CONFIG_H__
 #define __LED_DRIVER_CONFIG_H__
 
 //#define		DEBUGGING_TIMESCALE // if defined, the WDT times out about 60 times as often (16ms), to turn a minute into 2 seconds.
-// #define	RESET_IS_DISABLED // Define if the reset is going to be disabled
+//#define		RESET_IS_DISABLED // Define if the reset is going to be disabled
+#define		STORE_FLAGBYTES_IN_GPIOR // Store the flag bytes in General Purpose Registers, for efficiency
+#define		STORE_PACKETOUTCOUNT_INGPIOR2 // Store the last random in GPIOR2, for efficiency (250 byte code size reduction)
 
 #define		VERSION_MAJOR						1
-#define		VERSION_MINOR						0
-#define		VERSION_RELEASE						10
+#define		VERSION_MINOR						1
+#define		VERSION_RELEASE						11
 
 #define		PROJECT_SIGNATURE_HIGH				0x80 // MSB high, publicly available project 
 //   (means care must be taken with a potential future Asmyldof Suite when a project is "compiled at home")
@@ -128,7 +131,12 @@
 
 #define		UCSRA_STARTUP					0//(1<<U2X) // Don't enable high speed mode, 460.8 kBaud (circa 40kbyte/s?) is more than enough
 #define		UCSRB_STARTUP					( (1<<RXCIE)|(1<<RXEN) ) // interrupt on RX, Enable RX continuously (the RX interrupt will check what we receive makes sense), UDRIE will be enabled when starting TX
+// In order: enable parity: odd (UPM1:0 = 11), set 2 stop bits (USBS = 1), set to 8bit (UCSZ2:0 = 011) - Note UCSZ2 is in UCSRB when 9 bit seems like a good idea 
+#define		UCSRC_STARTUP					( (1<<UPM1)|(1<<UPM0)|(1<<USBS)|(1<<UCSZ1)|(1<<UCSZ0) )
 
+#define		TXPIN_PORT						PORTD
+#define		TXPIN_DDR						DDRD
+#define		TXPIN_PIN						(1<<PORTD1)
 
 #endif // __LED_DRIVER_USART_CMDS_H__
 

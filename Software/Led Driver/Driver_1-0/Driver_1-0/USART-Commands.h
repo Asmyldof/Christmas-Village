@@ -30,7 +30,7 @@
 // Any commands sent not fitting this mask will be responded to with NACK
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
- *  Single Byte Commands (0x10 through 0x50)
+ *  Single Byte Commands (0x10 through 0x3F)
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 #define		CMD_EnableEffects				0x10 // standard ACK/NACK response
 #define		CMD_DisableEffects				0x11 // standard ACK/NACK repsonse
@@ -55,9 +55,9 @@
 // this makes sure that the new speed can be comunicated at before it is set as default start-up
 // Best practice would be to add a PING/PONG between the two commands to properly verify
 
-#define		CMD_Ping						0x40 // should get a PONG back
-#define		CMD_GetVersion					0x41 // gets EXACK, followed by Major, Minor and Release version of the device (after a byte count of 3 of course)
-#define		CMD_GetDeviceSignature			0x42 // gets EXACK, followed by the three signature bytes of the device (after a byte count of 6 of course), followed by 3 bytes Asmyldof Project Signature (in case Asmyldof later creates a complete support suite)
+#define		CMD_Ping						0x3A // should get a PONG back
+#define		CMD_GetVersion					0x3B // gets EXACK, followed by Major, Minor and Release version of the device (after a byte count of 3 of course)
+#define		CMD_GetDeviceSignature			0x3C // gets EXACK, followed by the three signature bytes of the device (after a byte count of 6 of course), followed by 3 bytes Asmyldof Project Signature (in case Asmyldof later creates a complete support suite)
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  * Double Byte Commands (0xC0 through 0xFF)

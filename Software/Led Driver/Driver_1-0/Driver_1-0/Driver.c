@@ -52,6 +52,7 @@ static void BuildStandardAckAndTX();
 static uint8_t PopRandomNumber();
 static void PushRandomNumber(uint8_t input);
 inline static void	TXExnackHouseOutOfBounds();
+static void BuildFourByteExackAndTX(uint8_t payload);
 
 
 uint8_t EEMEM	EE_TargetNumberHousesDayTime = DEF_DAY_TIME_TARGET_NUMBER_HOUSES; // 1
@@ -68,7 +69,6 @@ uint8_t EEMEM	EE_UBRR_Startup = DEF_UBRR_VALUE; // 10
 uint8_t EEMEM	EE_PatternData[MAXIMUM_PATTERN_SIZE] = DEF_PATTERN;
 
 uint8_t	WDTPostDecrement; // Decrementer for the WDT interrupt
-uint8_t LastRandom; // Random number, updated at a constant interval (standard config about 125 unique random bytes per second)
 uint8_t	TempRandom; // Temporary memory for creating the random number
 uint8_t	RandomBitCount; // Counter for the random generator
 uint8_t	CurrentTargetHouses; // Number of houses we want turned on at present
@@ -79,15 +79,30 @@ uint8_t	EEPROMBlockWriteBuffer[EEPROM_BLOCK_WRITE_BUFFER];
 
 uint8_t	CurrentPatternIndex; // pointer byte to the index of the pattern data
 
-uint8_t	MainFlags; // Byte of main functionality flags
-uint8_t OpFlags; // Operational flags, only read-able externally
+#ifdef	STORE_FLAGBYTES_IN_GPIOR
+#define		MainFlags		GPIOR0 // Byte of main functionality flags
+#define		OpFlags			GPIOR1 // Operational flags, only read-able externally
+#else
+uint8_t	volatile	MainFlags; // Byte of main functionality flags
+uint8_t	volatile	OpFlags; // Operational flags, only read-able externally
+#endif
 
+#ifdef STORE_PACKETOUTCOUNT_INGPIOR2
+#define		CurrentUSARTPacketOutCount		GPIOR2
+#else
+uint8_t CurrentUSARTPacketOutCount; // If put in GPIOR2, compile size goes from 2774 to 2512
+#endif
+
+uint8_t LastRandom; // Random number, updated at a constant interval (standard config about 125 unique random bytes per second)
 uint8_t LastCommand;
 uint8_t CurrentUSARTPacketInCount;
-uint8_t CurrentUSARTPacketOutCount;
 uint8_t	TargetUSARTPacketInCount;
 uint8_t SerialInBuffer[SERIAL_BUFFER_SIZE]; // Serial port read (RX) buffer
 uint8_t SerialOutBuffer[SERIAL_BUFFER_SIZE]; // Serial port send (TX) buffer
+
+
+//#define TestingCommandHandleInInterrupt // temporary test define
+
 
 int main(void)
 {	
@@ -113,10 +128,22 @@ int main(void)
 	UBRRH = 0x00;
 	UBRRL = temp;
 	
-	
-	
 	DDRB = DDRB_STARTUP;
 	DDRD = DDRD_STARTUP;
+	
+	// To make sure the TX line is in mark (on) state when the transmitter is turned off, set the pin as output and high:
+	TXPIN_PORT |= TXPIN_PIN;
+	TXPIN_DDR |= TXPIN_PIN;
+	
+	/*
+	UCSRA = 0;//UCSRA_STARTUP;
+	UCSRB = 0b10011000;//UCSRB_STARTUP; // RX int, TXEN, RXEN
+	UCSRC = 0b00000110;//UCSRC_STARTUP; // 1 stop, 1 start, no parity, 8 data
+	*/
+	
+	UCSRA = UCSRA_STARTUP;
+	UCSRB = UCSRB_STARTUP; 
+	UCSRC = UCSRC_STARTUP;
 	
 	SetNoEffectOutputs();
 	
@@ -161,6 +188,7 @@ int main(void)
 		}
 		//PORTB = LastRandom;
 		//*/
+		
 		if( ( OpFlags & FLAG_OP_USART_HANDLE_COMMAND ) == FLAG_OP_USART_HANDLE_COMMAND )
 		{
 			HandleLastCommand();	
@@ -209,7 +237,7 @@ ISR(USART0_RX_vect)
 			else
 			{ // send a NACK: Command 
 				CurrentUSARTPacketOutCount = 1;
-				SerialOutBuffer[1] = CMD_RESPONSE_NACK; // The output buffer operates in reverse, so to send the NACK first, set it as the last
+				SerialOutBuffer[1] = 0xAA;//CMD_RESPONSE_NACK; // The output buffer operates in reverse, so to send the NACK first, set it as the last
 				SerialOutBuffer[0] = CurrentByte;
 				LastCommand = 0; // clear command
 				CurrentUSARTPacketInCount = 0; // reset counter
@@ -398,11 +426,16 @@ ISR(TIMER0_COMPA_vect)
  #
  # ##############################################################################*/
 
-static void BuildThreeByteExackAndTX(uint8_t payload)
+static void BuildFourByteExackAndTX(uint8_t payload)
 {
-	SerialOutBuffer[0] = CMD_RESPONSE_EXACK;
-	SerialOutBuffer[0] = 1; // followed by one byte
+	CurrentUSARTPacketOutCount = 3;
+	SerialOutBuffer[3] = CMD_RESPONSE_EXACK;
+	SerialOutBuffer[2] = LastCommand;
+	SerialOutBuffer[1] = 1; // followed by one byte
 	SerialOutBuffer[0] = payload;
+	LastCommand = 0; // clear command
+	CurrentUSARTPacketInCount = 0; // reset counter
+	StartUSARTTX();
 }
 
 
@@ -509,34 +542,34 @@ inline static void HandleLastCommand()
 			BuildStandardAckAndTX();
 			break;
 		case CMD_ReadRandomDelay:
-			BuildThreeByteExackAndTX( eeprom_read_byte(&EE_RandomStepDelay) );
+			BuildFourByteExackAndTX( eeprom_read_byte(&EE_RandomStepDelay) );
 			break;
 		case CMD_ReadPatternDelay:
-			BuildThreeByteExackAndTX( eeprom_read_byte(&EE_MainStepDelay) );
+			BuildFourByteExackAndTX( eeprom_read_byte(&EE_MainStepDelay) );
 			break;
 		case CMD_ReadPatternLength:
-			BuildThreeByteExackAndTX( eeprom_read_byte(&EE_PatternStepCount) );
+			BuildFourByteExackAndTX( eeprom_read_byte(&EE_PatternStepCount) );
 			break;
 		case CMD_ReadStartupDelay:
-			BuildThreeByteExackAndTX( eeprom_read_byte(&EE_StartupDelay) );
+			BuildFourByteExackAndTX( eeprom_read_byte(&EE_StartupDelay) );
 			break;
 		case CMD_ReadPostDelayTicksNight:
-			BuildThreeByteExackAndTX( eeprom_read_byte(&EE_PostDelayTicksNightTime) );
+			BuildFourByteExackAndTX( eeprom_read_byte(&EE_PostDelayTicksNightTime) );
 			break;
 		case CMD_ReadMinimumHouses:
-			BuildThreeByteExackAndTX( eeprom_read_byte(&EE_MinimumNumberHouses) );
+			BuildFourByteExackAndTX( eeprom_read_byte(&EE_MinimumNumberHouses) );
 			break;
 		case CMD_ReadNightTimeHouses:
-			BuildThreeByteExackAndTX( eeprom_read_byte(&EE_TargetNumberHousesNightTime) );
+			BuildFourByteExackAndTX( eeprom_read_byte(&EE_TargetNumberHousesNightTime) );
 			break;
 		case CMD_ReadDayTimeHouses:
-			BuildThreeByteExackAndTX( eeprom_read_byte(&EE_TargetNumberHousesDayTime) );
+			BuildFourByteExackAndTX( eeprom_read_byte(&EE_TargetNumberHousesDayTime) );
 			break;
 		case CMD_ReadMainFlags:
-			BuildThreeByteExackAndTX( MainFlags );
+			BuildFourByteExackAndTX( MainFlags );
 			break;
 		case CMD_GetOperationalFlags:
-			BuildThreeByteExackAndTX( OpFlags );
+			BuildFourByteExackAndTX( OpFlags );
 			break;
 		case CMD_StoreCurrentUBRR:
 			eeprom_update_byte(&EE_UBRR_Startup, UBRRL); // Compiler should handle the SFRIO -> REG -> EEPROM, even when we replace with our own function later (interrupt driven)
@@ -687,7 +720,7 @@ inline static void HandleLastCommand()
  */
 inline static void ProcessPatternStep()
 {
-	asm(""); // prevent compiler optimisation
+	
 }
 
 

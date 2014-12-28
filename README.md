@@ -57,10 +57,14 @@ Break (the houses are automatically dimmed by the sensor and the light sensor su
 (However, some work had already been done for other functionality, including patterns and EEPROM re-configurable settings, which should later be read/write-able through the serial interface (quick after thought in the hardware design).
 
 December 27th 2014:
-----
+-----
 Continuation of the development: Adding Serial interface, interleaved with shopping, cleaning and such.
 (Note, however, that the hardware is not available at this point, so all code is written and tested on paper only, undoubtedly leaving bugs to be discovered when the hardware is back again for a while.)
 
 December 28th 2014 (2:30 AM):
-----
+-----
 Serial command set almost completely implemented, before the remaining command get implemented the default eeprom_() routines from AVR-GCC need to be switched over to interrupt driven and flag-bocked, or some routine splitting needs to be done to get the blocking eeprom read/writes in the non-interrupt space inside main(). Else the "ReadPattern" and "WritePattern" commands will hold up too many interrupts.
+
+December 28th 2014 (14:00 to 16:30):
+-----
+A small window of hardware testing, allowing debugging of the USART code and changing some variables into GPIOR, to decrease code size. Basic USART system working, not all commands fully tested yet.
