@@ -6491,10 +6491,10 @@ Updated 01/16/2004&lt;/i&gt;&lt;/h4&gt;</description>
 <part name="IC2" library="linear4" deviceset="LM358" device="D"/>
 <part name="GND3" library="supply1" deviceset="GND" device=""/>
 <part name="C3" library="ipc-7351-capacitor" deviceset="CAPACITOR_" device="0603" value="100n"/>
-<part name="R1" library="ipc-7351-resistor" deviceset="RESISTOR_" device="0603" value="1M"/>
+<part name="R1" library="ipc-7351-resistor" deviceset="RESISTOR_" device="0603" value="10M"/>
 <part name="Q1" library="ipc-7351-transistor" deviceset="MOSFET-PCH_" device="SOT-23" value="Si2309CD"/>
 <part name="R2" library="ipc-7351-resistor" deviceset="RESISTOR_" device="0603" value="10k"/>
-<part name="R3" library="ipc-7351-resistor" deviceset="RESISTOR_" device="0603" value="490k"/>
+<part name="R3" library="ipc-7351-resistor" deviceset="RESISTOR_" device="0603" value="100k"/>
 <part name="GND4" library="supply1" deviceset="GND" device=""/>
 <part name="IC5" library="avr-6" deviceset="ATTINY-4/5/9/10" device=""/>
 <part name="IC6" library="avr-6" deviceset="TINY2313*" device="-*S*"/>
@@ -6557,10 +6557,13 @@ Updated 01/16/2004&lt;/i&gt;&lt;/h4&gt;</description>
 <part name="D3" library="diode" deviceset="ZENER-DIODE" device="SOT23" value="9V1"/>
 <part name="R12" library="ipc-7351-resistor" deviceset="RESISTOR_" device="0603" value="1M"/>
 <part name="GND15" library="supply1" deviceset="GND" device=""/>
+<part name="C12" library="ipc-7351-capacitor" deviceset="CAPACITOR_" device="0603" value="560pF"/>
+<part name="C13" library="ipc-7351-capacitor" deviceset="CAPACITOR_" device="0603" value="56nF"/>
 </parts>
 <sheets>
 <sheet>
 <plain>
+<text x="30.48" y="2.54" size="1.778" layer="91">C12 and C13 may be nescessary to limit above-10Hz-response. To get some fluorescent noise sources out, although the Tiny10 has some digital filtering and it worked fine without</text>
 </plain>
 <instances>
 <instance part="CN1" gate="G$1" x="5.08" y="96.52"/>
@@ -6665,6 +6668,8 @@ Updated 01/16/2004&lt;/i&gt;&lt;/h4&gt;</description>
 <instance part="D3" gate="G$1" x="127" y="111.76" rot="R180"/>
 <instance part="R12" gate="G$1" x="114.3" y="111.76"/>
 <instance part="GND15" gate="1" x="132.08" y="106.68"/>
+<instance part="C12" gate="G$1" x="45.72" y="10.16"/>
+<instance part="C13" gate="G$1" x="73.66" y="15.24"/>
 </instances>
 <busses>
 </busses>
@@ -6958,6 +6963,10 @@ Updated 01/16/2004&lt;/i&gt;&lt;/h4&gt;</description>
 <pinref part="D1" gate="1" pin="C"/>
 <wire x1="35.56" y1="27.94" x2="33.02" y2="27.94" width="0.1524" layer="91"/>
 <junction x="35.56" y="27.94"/>
+<pinref part="C12" gate="G$1" pin="1"/>
+<wire x1="40.64" y1="10.16" x2="35.56" y2="10.16" width="0.1524" layer="91"/>
+<wire x1="35.56" y1="10.16" x2="35.56" y2="20.32" width="0.1524" layer="91"/>
+<junction x="35.56" y="20.32"/>
 </segment>
 </net>
 <net name="N$3" class="0">
@@ -6971,6 +6980,10 @@ Updated 01/16/2004&lt;/i&gt;&lt;/h4&gt;</description>
 <wire x1="66.04" y1="38.1" x2="58.42" y2="38.1" width="0.1524" layer="91"/>
 <wire x1="58.42" y1="38.1" x2="58.42" y2="30.48" width="0.1524" layer="91"/>
 <junction x="58.42" y="30.48"/>
+<pinref part="C12" gate="G$1" pin="2"/>
+<wire x1="50.8" y1="10.16" x2="58.42" y2="10.16" width="0.1524" layer="91"/>
+<wire x1="58.42" y1="10.16" x2="58.42" y2="20.32" width="0.1524" layer="91"/>
+<junction x="58.42" y="20.32"/>
 </segment>
 </net>
 <net name="N$6" class="0">
@@ -6983,6 +6996,10 @@ Updated 01/16/2004&lt;/i&gt;&lt;/h4&gt;</description>
 <wire x1="63.5" y1="25.4" x2="63.5" y2="22.86" width="0.1524" layer="91"/>
 <wire x1="68.58" y1="25.4" x2="63.5" y2="25.4" width="0.1524" layer="91"/>
 <junction x="63.5" y="25.4"/>
+<pinref part="C13" gate="G$1" pin="1"/>
+<wire x1="68.58" y1="15.24" x2="68.58" y2="22.86" width="0.1524" layer="91"/>
+<wire x1="68.58" y1="22.86" x2="66.04" y2="22.86" width="0.1524" layer="91"/>
+<wire x1="66.04" y1="22.86" x2="63.5" y2="25.4" width="0.1524" layer="91"/>
 </segment>
 </net>
 <net name="N$7" class="0">
@@ -6995,6 +7012,10 @@ Updated 01/16/2004&lt;/i&gt;&lt;/h4&gt;</description>
 <pinref part="IC5" gate="G$1" pin="PB1"/>
 <wire x1="83.82" y1="35.56" x2="106.68" y2="35.56" width="0.1524" layer="91"/>
 <junction x="83.82" y="35.56"/>
+<pinref part="C13" gate="G$1" pin="2"/>
+<wire x1="78.74" y1="15.24" x2="78.74" y2="20.32" width="0.1524" layer="91"/>
+<wire x1="78.74" y1="20.32" x2="83.82" y2="25.4" width="0.1524" layer="91"/>
+<junction x="83.82" y="25.4"/>
 </segment>
 </net>
 <net name="N$11" class="0">
