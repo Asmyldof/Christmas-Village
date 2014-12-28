@@ -1,9 +1,18 @@
 /*
- * Driver_1_0.c
+ * Driver.c
  *
  * Created: 22-12-2014 20:54:38
  *  Author: Robert
+ *
+ * Even with externalised headers this file is starting to grow large with the whole Serial procedures, but 
+ * until the full Serial system has been tested and verified, it will stay that way, as the influence of splitting
+ * in different ways on the compiled file size is something that should not be researched in between code expansion
+ * As the compiled size is growing quickly with the addition of the Serial protocol, file size will become a 
+ * priority soon, and everything needs to be fully functional before we start ripping the rudimentary guts out
+ * of our code.
+ * 
  */ 
+// Project Hardware set up as follows:
 // PORTB = output 1 through 8
 // PORTD6 = output 9
 // PORTD5 = output 10
@@ -16,8 +25,8 @@
 // 
 // Crystal = 7.3728 MHz
 // Serial Baud = 115.2k
-// U2X = 0
-// UBRR = 3
+// U2X = 1
+// UBRR = 7
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
@@ -41,6 +50,7 @@ static void StartUSARTTX();
 inline static void HandleLastCommand();
 static void BuildStandardAckAndTX();
 static uint8_t PopRandomNumber();
+static void PushRandomNumber(uint8_t input);
 inline static void	TXExnackHouseOutOfBounds();
 
 
@@ -63,6 +73,7 @@ uint8_t	TempRandom; // Temporary memory for creating the random number
 uint8_t	RandomBitCount; // Counter for the random generator
 uint8_t	CurrentTargetHouses; // Number of houses we want turned on at present
 uint8_t	NightTimeDecreaseDecounter; // Decrementer for the slow increase or decrease of target house numbers
+uint8_t AvailableRandomNumbers;
 uint8_t	RandomStack[RANDOM_STACK_SIZE];
 uint8_t	EEPROMBlockWriteBuffer[EEPROM_BLOCK_WRITE_BUFFER];
 
@@ -103,6 +114,7 @@ int main(void)
 	UBRRL = temp;
 	
 	
+	
 	DDRB = DDRB_STARTUP;
 	DDRD = DDRD_STARTUP;
 	
@@ -115,6 +127,7 @@ int main(void)
 	LastCommand = 0x00;
 	CurrentUSARTPacketInCount = 0x00;
 	CurrentUSARTPacketOutCount = 0x00;
+	AvailableRandomNumbers = 0x00;
 	
 	WDTCR = WDTCSR_STARTUP;
 	
@@ -235,9 +248,23 @@ ISR(USART0_RX_vect)
 /* upon data register empty: */
 ISR(USART0_UDRE_vect)
 {
+	UDR = SerialOutBuffer[CurrentUSARTPacketOutCount]; // get current byte into the serial output register
 	
-	// if complete:
-	StopUSARTTX();
+	UCSRB |= (1 << TXEN); // Enable the transmitter
+	
+	// Post decrement here is an option, but size wise it will not make a difference with the decrement below,
+	//    because the compiler will first do a compare, brne then dec in both cases, but written like it is now
+	//    the code is clearer for beginning programmers. However, in some case a well planned post or pre decrement
+	//    will save space, always keep that in mind.
+	if( 0 == CurrentUSARTPacketOutCount )
+	{ // remember to stop transmitter (will only take effect after all current data is sent, see data sheet):
+		UCSRB &= ~(1 << UDRIE); // disable UDRE interrupt, since there's no more data
+		StopUSARTTX();
+	}
+	else
+	{
+		CurrentUSARTPacketOutCount--; // decrease here, else we will never send the last byte.
+	}
 }
 
 
@@ -300,8 +327,6 @@ ISR(WDT_OVERFLOW_vect)
  */
 ISR(TIMER0_COMPA_vect)
 {
-//	LastRandom++;
-
 	// First move up the current temprandom by one bit:
 	TempRandom = TempRandom << 1;
 
@@ -341,6 +366,7 @@ ISR(TIMER0_COMPA_vect)
 	{
 		// Reached a full byte here
 		LastRandom = TempRandom;
+		PushRandomNumber(TempRandom);
 		TempRandom = 0;
 		// don't reset counter, to keep track of odd/even bytes...
 	}
@@ -349,6 +375,7 @@ ISR(TIMER0_COMPA_vect)
 	{
 		// Reached a second full byte here, reset moment for the counter:
 		LastRandom = TempRandom;
+		PushRandomNumber(TempRandom);
 		TempRandom = 0;
 		RandomBitCount = 0;
 	}
@@ -374,23 +401,71 @@ ISR(TIMER0_COMPA_vect)
 static void BuildThreeByteExackAndTX(uint8_t payload)
 {
 	SerialOutBuffer[0] = CMD_RESPONSE_EXACK;
-	SerialOutBuffer[0] = 1; // followedby one byte
+	SerialOutBuffer[0] = 1; // followed by one byte
 	SerialOutBuffer[0] = payload;
 }
 
+
+/*
+ The random Stack is only used for the getRandomNumber serial function, so it is allowed to
+ run empty, when it is, it will become blocking, untill there is a new random number.
+ The internal WDT interrupt will use the "LastRandom" value, independently, so this will never cause
+ a race condition, so long PopRandomNumber is only used from non-interrupt places (void main(void))
+*/
 static uint8_t PopRandomNumber()
 {
-	return 0; // TODO: Add stack-pop once the random number system has been upgraded to a stacked system
+	while( AvailableRandomNumbers == 0 ) { }; // block while there are no random numbers
+	
+	return RandomStack[AvailableRandomNumbers--];
+}
+
+/*
+ Add a new random number to the stack, once that is done, increase the counter (to make sure when Pop is blocking
+ that it will get an actual random number, not an old repeat.
+*/
+static void PushRandomNumber(uint8_t input)
+{
+	uint8_t temp = (RANDOM_STACK_SIZE - 1) - AvailableRandomNumbers;
+	if( temp == 0 ) // little trick to allow the system to optimize more easily between here and the if at the end
+	{ // if the stack was full, shift it all down, to "keep it fresh (may be removed later, because true random doesn't really need fresh
+		for(int8_t itt = (RANDOM_STACK_SIZE - 1); itt > 0; itt--)
+		{
+			RandomStack[itt - 1] = RandomStack[itt];
+		}
+	}
+	
+	RandomStack[AvailableRandomNumbers] = input;
+	
+	if( temp != 0 )
+	{
+		AvailableRandomNumbers++;
+	}
 }
 
 static void StartUSARTTX()
 {
+	UDR = SerialOutBuffer[CurrentUSARTPacketOutCount]; // get current byte into the serial output register
 	
+	UCSRB |= (1 << TXEN); // Enable the transmitter
+	
+	// Post decrement here is an option, but size wise it will not make a difference with the decrement below,
+	//    because the compiler will first do a compare, brne then dec in both cases, but written like it is now
+	//    the code is clearer for beginning programmers. However, in some case a well planned post or pre decrement
+	//    will save space, always keep that in mind.
+	if( 0 == CurrentUSARTPacketOutCount )
+	{ // remember to stop transmitter (will only take effect after all current data is sent, see data sheet):
+		StopUSARTTX();
+	}
+	else
+	{
+		CurrentUSARTPacketOutCount--; // decrease here, else we will never send the last byte.
+		UCSRB |= (1 << UDRIE); // enable the UDRE interrupt only if there's more to send
+	}
 }
 
 inline static void StopUSARTTX()
 {
-	
+	UCSRB &= ~(1<<TXEN);
 }
 
 inline static void	TXExnackHouseOutOfBounds()
@@ -415,6 +490,10 @@ static void BuildStandardAckAndTX()
 	StartUSARTTX();
 }
 
+
+/*
+Invokes PopRandomNumber: Should not be called from an interrupt while PopRandomNumber is a blocking function.
+*/
 inline static void HandleLastCommand()
 {
 	uint8_t Command = LastCommand;
@@ -554,10 +633,22 @@ inline static void HandleLastCommand()
 			CurrentUSARTPacketInCount = 0; // reset USART counter
 			StartUSARTTX();
 			break;
-		case CMD_ReadPatternData:
-			
-			break;
 		case CMD_GetDeviceSignature:
+			// TODO: Read each signature byte;
+			CurrentUSARTPacketOutCount = 7;
+			SerialOutBuffer[7] = CMD_RESPONSE_EXACK;
+			SerialOutBuffer[6] = 6; // 6 bytes to follow
+			SerialOutBuffer[5] = 0; // reading of device signature not yet implemented
+			SerialOutBuffer[4] = 0; // TODO: implement reading of device signature.
+			SerialOutBuffer[3] = 0;
+			SerialOutBuffer[2] = PROJECT_SIGNATURE_HIGH;
+			SerialOutBuffer[1] = PROJECT_SIGNATURE_MID;
+			SerialOutBuffer[0] = PROJECT_SIGNATURE_LOW;
+			LastCommand = 0; // clear command
+			CurrentUSARTPacketInCount = 0; // reset USART counter
+			StartUSARTTX();
+			break;
+		case CMD_ReadPatternData:
 			
 			break;
 		case CMD_SetPatternData:
@@ -567,8 +658,16 @@ inline static void HandleLastCommand()
 			
 			break;
 		case CMD_GoToBootloader:
-			
-			break;	
+			if( ( CurrentUSARTPacketInCount == CMD_GoToBootloaderPackLength ) && \
+				( SerialInBuffer[0] == CMD_GoToBootloaderSig1 ) && \
+				( SerialInBuffer[1] == CMD_GoToBootloaderSig2 ) && \
+				( SerialInBuffer[2] == CMD_GoToBootloaderSig3 ) )
+			{ // IFF entire bootloader packet correct, create ack and enable reboot to bootloader when done:
+				OpFlags |= FLAG_OP_GOTO_BOOTLOADER_AFTERTX;
+				BuildStandardAckAndTX();
+				break;
+			}
+			// if the packet was not correct, fall through into the default NACK response (NO break!):
 		default:
 			// Not in this list = Not recognised:
 			CurrentUSARTPacketOutCount = 1;
@@ -579,8 +678,7 @@ inline static void HandleLastCommand()
 			StartUSARTTX();
 			break;
 	}
-	
-	// StartUSARTTX();
+	OpFlags &= ~FLAG_OP_USART_HANDLE_COMMAND; // handling of command completed, release flag before we finish.
 }
 
 /*

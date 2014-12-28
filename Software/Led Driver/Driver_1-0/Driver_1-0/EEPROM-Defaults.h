@@ -15,7 +15,7 @@
 #define		DEF_RANDOM_STEP_DELAY				50 // number of 1s WDT interrupts per step in random
 #define		DEF_NIGHTTIME_TICKS					80 // number of RandomSteps between target number houses decrements
 #define		DEF_STARTUP_DELAY					240 // 240 quarter second startup: 1 minute
-#define		DEF_UBRR_VALUE						7 // U2X=1, crystal 7.3728MHz --> 7=115.2kBaud; 17 -> 57.6kBaud; 31 -> 28.8kBaud; 63 -> 14.4kBaud; 191 -> 4.8kBaud
+#define		DEF_UBRR_VALUE						3 // U2X=0, crystal 7.3728MHz --> 3=115.2kBaud; 7 -> 57.6kBaud; 15 -> 28.8kBaud; 31 -> 14.4kBaud; 95 -> 4.8kBaud
 // Make sure the resulting speed is no less than 14.4k for triggering the bootloader without time-out interrupts (these can be very
 //    difficult to debug)
 // If the bootloader procedure is preceded by setting the UBRR to a number below 63, the default can be anything, but do note: it is only an 8bit value, the upper UBRR byte

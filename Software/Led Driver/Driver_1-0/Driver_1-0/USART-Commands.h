@@ -57,7 +57,7 @@
 
 #define		CMD_Ping						0x40 // should get a PONG back
 #define		CMD_GetVersion					0x41 // gets EXACK, followed by Major, Minor and Release version of the device (after a byte count of 3 of course)
-#define		CMD_GetDeviceSignature			0x42 // gets EXACK, followed by the three signature bytes of the device (after a byte count of 3 of course)
+#define		CMD_GetDeviceSignature			0x42 // gets EXACK, followed by the three signature bytes of the device (after a byte count of 6 of course), followed by 3 bytes Asmyldof Project Signature (in case Asmyldof later creates a complete support suite)
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  * Double Byte Commands (0xC0 through 0xFF)

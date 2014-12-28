@@ -2,6 +2,22 @@
 
 */
 
+// Project Hardware set up as follows:
+// PORTB = output 1 through 8
+// PORTD6 = output 9
+// PORTD5 = output 10
+// PORTD4 = Random Bitstream Positive
+// PORTD3 / INT1 = Random Bitstream Negative
+// PORTD2 / INT0 = Night Mode input
+// PORTD0 / RXD = Serial interface
+// PORTD1 / TXD = Serial interface
+// PORTA2 / RESET = Random / Pattern select
+//
+// Crystal = 7.3728 MHz
+// Serial Baud = 115.2k
+// U2X = 0
+// UBRR = 3
+
 #ifndef __LED_DRIVER_CONFIG_H__
 #define __LED_DRIVER_CONFIG_H__
 
@@ -10,7 +26,15 @@
 
 #define		VERSION_MAJOR						1
 #define		VERSION_MINOR						0
-#define		VERSION_RELEASE						6
+#define		VERSION_RELEASE						9
+
+#define		PROJECT_SIGNATURE_HIGH				0x80 // MSB high, publicly available project 
+//   (means care must be taken with a potential future Asmyldof Suite when a project is "compiled at home")
+//   Remaining bits signify stuff that is not decided yet, possibly internal differentiations between project types
+//   for non-open-source (MSB zero) embedded devices.
+
+#define		PROJECT_SIGNATURE_MID				0x00 // Mid & Low together make an incremental 16bit project number for each MSB category
+#define		PROJECT_SIGNATURE_LOW				0x03
 
 
 
@@ -93,15 +117,17 @@
 #ifdef	DEBUGGING_TIMESCALE
 #define		WDTCSR_STARTUP				(1<<WDIE) // Prescaled to about 16 mili second interval, enable the watchdog interrupt
 #else	// DEBUGGING_TIMESCALE
-#define		WDTCSR_STARTUP				(1<<WDIE)|(1<<WDP2) // Prescaled to about 1/4 second interval, enable the watchdog interrupt
+#define		WDTCSR_STARTUP				( (1<<WDIE)|(1<<WDP2) ) // Prescaled to about 1/4 second interval, enable the watchdog interrupt
 #endif	// DEBUGGING_TIMESCALE
 
 #define		TCCR0A_STARTUP					(1<<WGM01) // Select CTC Mode on OCR0A
-#define		TCCR0B_STARTUP					(1<<CS01)|(1<<CS00) // Prascale by 64
+#define		TCCR0B_STARTUP					( (1<<CS01)|(1<<CS00) ) // Prascale by 64
 #define		OCR0A_STARTUP					11 // Overflow at 115 to sample at about 1kHz (about 125 truly random numbers per second)
 
 #define		TIMSK_STARTUP					(1<<OCIE0A)
 
+#define		UCSRA_STARTUP					0//(1<<U2X) // Don't enable high speed mode, 460.8 kBaud (circa 40kbyte/s?) is more than enough
+#define		UCSRB_STARTUP					( (1<<RXCIE)|(1<<RXEN) ) // interrupt on RX, Enable RX continuously (the RX interrupt will check what we receive makes sense), UDRIE will be enabled when starting TX
 
 
 #endif // __LED_DRIVER_USART_CMDS_H__

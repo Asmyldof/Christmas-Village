@@ -13,7 +13,7 @@
 #define		FLAG_OP_USART_RX_ENABLE						0x02
 #define		FLAG_OP_EEPROM_INPROGRESS					0x04 // Currently an interrupt driven EEPROM procedure is in progress.
 #define		FLAG_OP_USART_HANDLE_COMMAND				0x08
-
+#define		FLAG_OP_GOTO_BOOTLOADER_AFTERTX				0x10 // When the transmission is done, reboot to the bootloader
 
 #endif // __LED_DRIVER_FLAGS_H__
 
