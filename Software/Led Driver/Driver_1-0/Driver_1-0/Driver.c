@@ -53,13 +53,13 @@ inline static void HandleLastCommand();
 static void BuildStandardAckAndTX();
 static uint8_t PopRandomNumber();
 static void PushRandomNumber(uint8_t input);
-inline static void	TXExnackHouseOutOfBounds();
 static void BuildFourByteExackAndTX(uint8_t payload);
 inline static uint8_t __eeprom_read_byte(uint8_t * EEPromAddress);
 inline static void __eeprom_update_byte(uint8_t * EEPromAddress, uint8_t ByteSource);
 inline static void EepromStartIWrite();
 inline static void BuildExNackAndTX(uint8_t reason);
 inline static void PostTXActions();
+inline static void BuildNackAndTX();
 
 uint8_t EEMEM	EE_TargetNumberHousesDayTime = DEF_DAY_TIME_TARGET_NUMBER_HOUSES; // 1
 uint8_t EEMEM	EE_MinimumNumberHouses = DEF_MINIMUM_NUMBER_OF_HOUSES; // 2
@@ -235,12 +235,7 @@ ISR(USART0_RX_vect)
 			}
 			else
 			{ // send a NACK: Command 
-				CurrentUSARTPacketOutCount = 1;
-				SerialOutBuffer[1] = 0xAA;//CMD_RESPONSE_NACK; // The output buffer operates in reverse, so to send the NACK first, set it as the last
-				SerialOutBuffer[0] = CurrentByte;
-				LastCommand = 0; // clear command
-				CurrentUSARTPacketInCount = 0; // reset counter
-				StartUSARTTX();
+				BuildNackAndTX();
 			}
 		}
 		// else do nothing: Ignore zero command-bytes as high-level idle line.
@@ -276,42 +271,26 @@ ISR(USART0_RX_vect)
 ISR(USART0_UDRE_vect)
 {
 	// The following is basically a carry test that works on GPIOR and uint8_t when decrementing.
-	if( ( CurrentUSARTPacketOutCount & 0x10 ) == 0x10 )
+	if( ( CurrentUSARTPacketOutCount & 0x80 ) == 0x80 )
 	{ // If we have an overflow (underflow) stop transmission and handle post-TX checks:
 		UCSRB |= (1<<TXCIE); // enable TX complete interrupt (we do this here, to avoid prematurely triggering when loading new data takes too long due to interrupt queueing).
+		StopUSARTTX(); // pre-emtively stop the transmitter, so it doesn't ask for another byte at some point.
 	}
 	else
-	{
+	{	
 		UDR = SerialOutBuffer[CurrentUSARTPacketOutCount]; // get current byte into the serial output register
-		//UCSRB |= (1 << TXEN); // Enable the transmitter
 		CurrentUSARTPacketOutCount--;
 	}
-	
-	/* decrement is now always done, but as a post-dec above. If this all works okay these bits below can be deleted.
-	// Post decrement here is an option, but size wise it will not make a difference with the decrement below,
-	//    because the compiler will first do a compare, brne then dec in both cases, but written like it is now
-	//    the code is clearer for beginning programmers. However, in some case a well planned post or pre decrement
-	//    will save space, always keep that in mind.
-	if( 0 == CurrentUSARTPacketOutCount )
-	{ // remember to stop transmitter (will only take effect after all current data is sent, see data sheet):
-		UCSRB &= ~(1 << UDRIE); // disable UDRE interrupt, since there's no more data
-		StopUSARTTX();
-	}
-	else
-	{
-		CurrentUSARTPacketOutCount--; // decrease here, else we will never send the last byte.
-	}
-	*/
 }
 
 
 // When transmission is done: (this may become nescesary after a small test)
 ISR(USART0_TX_vect)
 {
-	// This only happens when the last byte had been loaded previously
+	// This interrupt only happens when the last byte had already been loaded and afterwards the TX system completed transferring all data:
 	PostTXActions();
-	// turn off the transmitter:
-	StopUSARTTX(); // disables both transmitter interrupts, so no need here.
+	// turn off the interrupt to make sure no inappropriate triggers happen at a next transfer:
+	UCSRB &= ~(1<<TXCIE);
 }
 
 
@@ -443,6 +422,17 @@ ISR(TIMER0_COMPA_vect)
  #
  # ##############################################################################*/
 
+inline static void BuildNackAndTX()
+{
+	CurrentUSARTPacketOutCount = 1;
+	SerialOutBuffer[1] = CMD_RESPONSE_NACK; // The output buffer operates in reverse, so to send the NACK first, set it as the last
+	SerialOutBuffer[0] = LastCommand;
+	LastCommand = 0; // clear command
+	CurrentUSARTPacketInCount = 0; // reset counter
+	StartUSARTTX();
+}
+
+
 static void BuildFourByteExackAndTX(uint8_t payload)
 {
 	CurrentUSARTPacketOutCount = 3;
@@ -503,47 +493,22 @@ static void PushRandomNumber(uint8_t input)
 }
 
 static void StartUSARTTX()
-{
+{	
 	UDR = SerialOutBuffer[CurrentUSARTPacketOutCount]; // get current byte into the serial output register and decrement counter
+	CurrentUSARTPacketOutCount--;
 	
 	UCSRB |= ( (1 << TXEN)|(1 << UDRIE) ); // Enable the transmitter and UDRE interrupt
-	
-	CurrentUSARTPacketOutCount--;
-	/* We will trigger the whole stop on a negative number at the start of interrupt, because we now have post-transmission stuff to do
-	    that cannot be done while the last byte is still sending.
-	// Post decrement here is an option, but size wise it will not make a difference with the decrement below,
-	//    because the compiler will first do a compare, brne then dec in both cases, but written like it is now
-	//    the code is clearer for beginning programmers. However, in some case a well planned post or pre decrement
-	//    will save space, always keep that in mind.
-	if( 0 == CurrentUSARTPacketOutCount )
-	{ // remember to stop transmitter (will only take effect after all current data is sent, see data sheet):
-		StopUSARTTX();
-	}
-	else
-	{
-		CurrentUSARTPacketOutCount--; // decrease here, else we will never send the last byte.
-		UCSRB |= (1 << UDRIE); // enable the UDRE interrupt only if there's more to send
-	}
-	*/
+	// Note: Enabling the UDRIE and TXEN at the same time should always be done after loading the UDR with the first byte,
+	//    because, of course, else the interrupt will trigger immediately.
+	//    During refactoring this occurred, as a lot of statements were juggled around and compacted, and due to the high speed of
+	//    development this was overlooked. Luckily 30 minutes of creative debugging solved the problems.
 }
 
 inline static void StopUSARTTX()
 {
-	UCSRB &= ~( (1<<TXEN)|(1<<UDRIE)|(1<<TXCIE) ); // turn off udre interrupt, txcomplete interrupt and the transmitter
+	UCSRB &= ~( (1<<TXEN)|(1<<UDRIE) ); // turn off udre interrupt, txcomplete interrupt and the transmitter
 }
 
-/*
-inline static void	TXExnackHouseOutOfBounds()
-{
-	CurrentUSARTPacketOutCount = 2;
-	SerialOutBuffer[2] = CMD_RESPONSE_EXNACK; // The output buffer operates in reverse, so to send the NACK first, set it as the last
-	SerialOutBuffer[1] = LastCommand;
-	SerialOutBuffer[0] = CMD_EXNACK_NumberOutOfBounds;
-	LastCommand = 0; // clear command
-	CurrentUSARTPacketInCount = 0; // reset counter
-	StartUSARTTX();
-}
-*/
 
 static void BuildStandardAckAndTX()
 {
@@ -719,15 +684,6 @@ inline static void HandleLastCommand()
 			break;
 		case CMD_GetRandomNumber:
 			BuildFourByteExackAndTX( PopRandomNumber() );
-			/*
-			CurrentUSARTPacketOutCount = 3;
-			SerialOutBuffer[2] = CMD_RESPONSE_EXACK;
-			SerialOutBuffer[1] = 1; // 1 byte follows
-			SerialOutBuffer[0] = PopRandomNumber();
-			LastCommand = 0; // clear command
-			CurrentUSARTPacketInCount = 0; // reset USART counter
-			StartUSARTTX();
-			*/
 			break;
 		case CMD_GetDeviceSignature:
 			// TODO: Read each signature byte;
@@ -754,7 +710,7 @@ inline static void HandleLastCommand()
 			
 			break;
 		case CMD_GoToBootloader:
-			if( ( CurrentUSARTPacketInCount == CMD_GoToBootloaderPackLength ) && \
+			if( ( CurrentUSARTPacketInCount == (CMD_GoToBootloaderPackLength + 1) ) && /* Because of the way of counting incoming bytes, we need to compare to packet length + 1 */\
 				( SerialInBuffer[0] == CMD_GoToBootloaderSig1 ) && \
 				( SerialInBuffer[1] == CMD_GoToBootloaderSig2 ) && \
 				( SerialInBuffer[2] == CMD_GoToBootloaderSig3 ) )
@@ -766,12 +722,7 @@ inline static void HandleLastCommand()
 			// if the packet was not correct, fall through into the default NACK response (NO break!):
 		default:
 			// Not in this list = Not recognised:
-			CurrentUSARTPacketOutCount = 1;
-			SerialOutBuffer[1] = CMD_RESPONSE_NACK; // The output buffer operates in reverse, so to send the NACK first, set it as the last
-			SerialOutBuffer[0] = Command;
-			LastCommand = 0; // clear command
-			CurrentUSARTPacketInCount = 0; // reset counter
-			StartUSARTTX();
+			BuildNackAndTX();
 			break;
 	}
 	OpFlags &= ~FLAG_OP_USART_HANDLE_COMMAND; // handling of command completed, release flag before we finish.
@@ -1027,7 +978,7 @@ inline static void __eeprom_update_byte(uint8_t * EEPromAddress, uint8_t ByteSou
 
 inline static void EepromStartIWrite()
 {
-	OpFlags |= FLAG_OP_EEPROM_INPROGRESS;
+	//OpFlags |= FLAG_OP_EEPROM_INPROGRESS;
 	// enable interrupt
 	// load first address
 	// load/write first byte

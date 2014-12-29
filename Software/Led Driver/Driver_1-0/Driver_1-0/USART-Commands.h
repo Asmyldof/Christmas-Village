@@ -38,23 +38,23 @@
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  *  Single Byte Commands (0x10 through 0x3F)
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-#define		CMD_EnableEffects				0x10 // standard ACK/NACK response
-#define		CMD_DisableEffects				0x11 // standard ACK/NACK repsonse
+  #define		CMD_EnableEffects				0x10 // standard ACK/NACK response
+  #define		CMD_DisableEffects				0x11 // standard ACK/NACK repsonse
 
 #define		CMD_ReadPatternData				0x20 // Response is EXACK with patterndata
-#define		CMD_ReadRandomDelay				0x21 // Response is EXACK with delay byte
+  #define		CMD_ReadRandomDelay				0x21 // Response is EXACK with delay byte
 #define		CMD_ReadPatternDelay			0x22 // Response is EXACK with delay byte
 #define		CMD_ReadPatternLength			0x23
-#define		CMD_ReadStartupDelay			0x24
-#define		CMD_ReadPostDelayTicksNight		0x25
-#define		CMD_ReadMinimumHouses			0x26
-#define		CMD_ReadNightTimeHouses			0x27
-#define		CMD_ReadDayTimeHouses			0x28
+  #define		CMD_ReadStartupDelay			0x24
+  #define		CMD_ReadPostDelayTicksNight		0x25
+  #define		CMD_ReadMinimumHouses			0x26
+  #define		CMD_ReadNightTimeHouses			0x27
+  #define		CMD_ReadDayTimeHouses			0x28
 	
 
-#define		CMD_GetRandomNumber				0x2C // Response is EXACK with a random number byte
-#define		CMD_ReadMainFlags				0x2D // Response is EXACK with MainFlag byte
-#define		CMD_GetOperationalFlags			0x2E // Response is EXACK with OpFlag byte
+  #define		CMD_GetRandomNumber				0x2C // Response is EXACK with a random number byte
+  #define		CMD_ReadMainFlags				0x2D // Response is EXACK with MainFlag byte
+  #define		CMD_GetOperationalFlags			0x2E // Response is EXACK with OpFlag byte
 
 #define		CMD_StoreCurrentUBRR			0x38 // Store the current UBRR into EEPROM
 // First set the UBRR with the setUBRR command, then send the store command at the new speed
@@ -70,9 +70,9 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
   #define		CMD_SetRandomDelay				0xC0 // standard ACK/NACK response
 #define		CMD_SetPatternDelay				0xC1 // standard ACK/NACK response
-#define		CMD_SetMinimumHouses			0xC2 // standard ACK/NACK response
-#define		CMD_SetNightTimeHouses			0xC3 // ACK or EXNACK
-#define		CMD_SetDayTimeHouses			0xC4 // ACK or EXNACK
+  #define		CMD_SetMinimumHouses			0xC2 // standard ACK/NACK response
+  #define		CMD_SetNightTimeHouses			0xC3 // ACK or EXNACK
+  #define		CMD_SetDayTimeHouses			0xC4 // ACK or EXNACK
 #define		CMD_SetPatternLength			0xC5 // ACK or EXNACK
   #define		CMD_SetStartupDelay				0xC6
   #define		CMD_SetPostDelayTicksNight		0xC7
@@ -86,7 +86,7 @@
 // Will send an ACK out _before_ the new UBRR value is set (so that the PC can await an ACK/NACK before changing its own endpoint
 
 
-#define		CMD_SetAndStoreMainFlags		0xE1 // standard ACK/NACK response
+  #define		CMD_SetAndStoreMainFlags		0xE1 // standard ACK/NACK response
 
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *

@@ -29,7 +29,7 @@
 
 #define		VERSION_MAJOR						1
 #define		VERSION_MINOR						2
-#define		VERSION_RELEASE						12
+#define		VERSION_RELEASE						16
 
 #define		PROJECT_SIGNATURE_HIGH				0x80 // MSB high, publicly available project 
 //   (means care must be taken with a potential future Asmyldof Suite when a project is "compiled at home")
