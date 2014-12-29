@@ -28,6 +28,8 @@
 // U2X = 1
 // UBRR = 7
 
+// TODO: Extend ifdefs around GPIOR use blocks to include "If defined GPIOR" for compatibility.
+
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <avr/eeprom.h>
@@ -53,7 +55,11 @@ static uint8_t PopRandomNumber();
 static void PushRandomNumber(uint8_t input);
 inline static void	TXExnackHouseOutOfBounds();
 static void BuildFourByteExackAndTX(uint8_t payload);
-
+inline static uint8_t __eeprom_read_byte(uint8_t * EEPromAddress);
+inline static void __eeprom_update_byte(uint8_t * EEPromAddress, uint8_t ByteSource);
+inline static void EepromStartIWrite();
+inline static void BuildExNackAndTX(uint8_t reason);
+inline static void PostTXActions();
 
 uint8_t EEMEM	EE_TargetNumberHousesDayTime = DEF_DAY_TIME_TARGET_NUMBER_HOUSES; // 1
 uint8_t EEMEM	EE_MinimumNumberHouses = DEF_MINIMUM_NUMBER_OF_HOUSES; // 2
@@ -68,6 +74,7 @@ uint8_t EEMEM	EE_UBRR_Startup = DEF_UBRR_VALUE; // 10
 
 uint8_t EEMEM	EE_PatternData[MAXIMUM_PATTERN_SIZE] = DEF_PATTERN;
 
+
 uint8_t	WDTPostDecrement; // Decrementer for the WDT interrupt
 uint8_t	TempRandom; // Temporary memory for creating the random number
 uint8_t	RandomBitCount; // Counter for the random generator
@@ -76,7 +83,7 @@ uint8_t	NightTimeDecreaseDecounter; // Decrementer for the slow increase or decr
 uint8_t AvailableRandomNumbers;
 uint8_t	RandomStack[RANDOM_STACK_SIZE];
 uint8_t	EEPROMBlockWriteBuffer[EEPROM_BLOCK_WRITE_BUFFER];
-
+uint8_t UBRRBuffer; // buffer memory to store the UBRR byte to write after tx of an ACK.
 uint8_t	CurrentPatternIndex; // pointer byte to the index of the pattern data
 
 #ifdef	STORE_FLAGBYTES_IN_GPIOR
@@ -101,8 +108,6 @@ uint8_t SerialInBuffer[SERIAL_BUFFER_SIZE]; // Serial port read (RX) buffer
 uint8_t SerialOutBuffer[SERIAL_BUFFER_SIZE]; // Serial port send (TX) buffer
 
 
-//#define TestingCommandHandleInInterrupt // temporary test define
-
 
 int main(void)
 {	
@@ -114,16 +119,16 @@ int main(void)
 	// Read the pattern data, up to the number of steps in the pattern:
 	//eeprom_read_block((void *) RAM_PatternData, (const void*) EE_PatternData, MAXIMUM_PATTERN_SIZE);
 	
-	CurrentTargetHouses = eeprom_read_byte(&EE_TargetNumberHousesDayTime);
+	CurrentTargetHouses = __eeprom_read_byte(&EE_TargetNumberHousesDayTime);
 	
 	// set startup delay
-	WDTPostDecrement = eeprom_read_byte(&EE_StartupDelay);
+	WDTPostDecrement = __eeprom_read_byte(&EE_StartupDelay);
 
-	NightTimeDecreaseDecounter = eeprom_read_byte(&EE_PostDelayTicksNightTime);
+	NightTimeDecreaseDecounter = __eeprom_read_byte(&EE_PostDelayTicksNightTime);
 	
-	MainFlags = eeprom_read_byte(&EE_MainFlags);
+	MainFlags = __eeprom_read_byte(&EE_MainFlags);
 	
-	temp = eeprom_read_byte(&EE_UBRR_Startup);
+	temp = __eeprom_read_byte(&EE_UBRR_Startup);
 	
 	UBRRH = 0x00;
 	UBRRL = temp;
@@ -147,13 +152,13 @@ int main(void)
 	
 	SetNoEffectOutputs();
 	
+	OpFlags = 0x00;
+	CurrentUSARTPacketOutCount = 0x00;
+	CurrentUSARTPacketInCount = 0x00;
 	LastRandom = 0x00;
 	TempRandom = 0x00;
 	RandomBitCount = 0x00;
-	OpFlags = 0x00;
 	LastCommand = 0x00;
-	CurrentUSARTPacketInCount = 0x00;
-	CurrentUSARTPacketOutCount = 0x00;
 	AvailableRandomNumbers = 0x00;
 	
 	WDTCR = WDTCSR_STARTUP;
@@ -168,25 +173,19 @@ int main(void)
 	
 	while(1)
     {
-		// Semaphore system has been shelved for now, since it seems to be optimised away, no matter
-		// what kind of, or how many empty assembler directives I sprinkle throughout the code:
-		
+		// With the move to volatile and/or GPIOR flagging this should work again, but for now we're 
+		// focusing on completing the USART system, so we'll try that later:
 		/*
 		if( (MainFlags & FLAG_PROCESS_PATTERNSTEP) == FLAG_PROCESS_PATTERNSTEP )
 		{	// If the flag to process a patternstep is set:
-			asm __volatile__ (""); // prevent compiler optimisation
-			// (for some reason the compiler thinks the inline functions are ineffectual?!)
-			MainFlags &= ~FLAG_PROCESS_PATTERNSTEP; // unset the flag
 			ProcessPatternStep();// process a patternstep
+			MainFlags &= ~FLAG_PROCESS_PATTERNSTEP; // unset the flag
 		}
 		if( (MainFlags & FLAG_PROCESS_RANDOMHOUSE) == FLAG_PROCESS_RANDOMHOUSE )
 		{
-			asm __volatile__ (""); // prevent compiler optimisation
-			//PORTB = LastRandom;
-			MainFlags &= ~FLAG_PROCESS_RANDOMHOUSE;
 			ProcessRandomHouseToggle();
+			MainFlags &= ~FLAG_PROCESS_RANDOMHOUSE;
 		}
-		//PORTB = LastRandom;
 		//*/
 		
 		if( ( OpFlags & FLAG_OP_USART_HANDLE_COMMAND ) == FLAG_OP_USART_HANDLE_COMMAND )
@@ -276,10 +275,19 @@ ISR(USART0_RX_vect)
 /* upon data register empty: */
 ISR(USART0_UDRE_vect)
 {
-	UDR = SerialOutBuffer[CurrentUSARTPacketOutCount]; // get current byte into the serial output register
+	// The following is basically a carry test that works on GPIOR and uint8_t when decrementing.
+	if( ( CurrentUSARTPacketOutCount & 0x10 ) == 0x10 )
+	{ // If we have an overflow (underflow) stop transmission and handle post-TX checks:
+		UCSRB |= (1<<TXCIE); // enable TX complete interrupt (we do this here, to avoid prematurely triggering when loading new data takes too long due to interrupt queueing).
+	}
+	else
+	{
+		UDR = SerialOutBuffer[CurrentUSARTPacketOutCount]; // get current byte into the serial output register
+		//UCSRB |= (1 << TXEN); // Enable the transmitter
+		CurrentUSARTPacketOutCount--;
+	}
 	
-	UCSRB |= (1 << TXEN); // Enable the transmitter
-	
+	/* decrement is now always done, but as a post-dec above. If this all works okay these bits below can be deleted.
 	// Post decrement here is an option, but size wise it will not make a difference with the decrement below,
 	//    because the compiler will first do a compare, brne then dec in both cases, but written like it is now
 	//    the code is clearer for beginning programmers. However, in some case a well planned post or pre decrement
@@ -293,9 +301,18 @@ ISR(USART0_UDRE_vect)
 	{
 		CurrentUSARTPacketOutCount--; // decrease here, else we will never send the last byte.
 	}
+	*/
 }
 
 
+// When transmission is done: (this may become nescesary after a small test)
+ISR(USART0_TX_vect)
+{
+	// This only happens when the last byte had been loaded previously
+	PostTXActions();
+	// turn off the transmitter:
+	StopUSARTTX(); // disables both transmitter interrupts, so no need here.
+}
 
 
 /*
@@ -322,7 +339,7 @@ ISR(WDT_OVERFLOW_vect)
 		{ //  If high, we run in random mode
 			// first of all: load the tick delay:
 #endif
-			WDTPostDecrement = eeprom_read_byte(&EE_RandomStepDelay);
+			WDTPostDecrement = __eeprom_read_byte(&EE_RandomStepDelay);
 			ProcessRandomHouseToggle();
 			//MainFlags |= FLAG_PROCESS_RANDOMHOUSE;
 
@@ -330,7 +347,7 @@ ISR(WDT_OVERFLOW_vect)
 		}
 		else
 		{ // else we run in pattern mode
-			WDTPostDecrement = eeprom_read_byte(&EE_MainStepDelay);
+			WDTPostDecrement = __eeprom_read_byte(&EE_MainStepDelay);
 			ProcessPatternStep();
 			//MainFlags |= FLAG_PROCESS_PATTERNSTEP;
 		}
@@ -438,6 +455,16 @@ static void BuildFourByteExackAndTX(uint8_t payload)
 	StartUSARTTX();
 }
 
+inline static void BuildExNackAndTX(uint8_t reason)
+{
+	CurrentUSARTPacketOutCount = 2;
+	SerialOutBuffer[2] = CMD_RESPONSE_EXNACK;
+	SerialOutBuffer[1] = LastCommand;
+	SerialOutBuffer[0] = reason;
+	LastCommand = 0; // clear command
+	CurrentUSARTPacketInCount = 0; // reset counter
+	StartUSARTTX();
+}
 
 /*
  The random Stack is only used for the getRandomNumber serial function, so it is allowed to
@@ -477,10 +504,13 @@ static void PushRandomNumber(uint8_t input)
 
 static void StartUSARTTX()
 {
-	UDR = SerialOutBuffer[CurrentUSARTPacketOutCount]; // get current byte into the serial output register
+	UDR = SerialOutBuffer[CurrentUSARTPacketOutCount]; // get current byte into the serial output register and decrement counter
 	
-	UCSRB |= (1 << TXEN); // Enable the transmitter
+	UCSRB |= ( (1 << TXEN)|(1 << UDRIE) ); // Enable the transmitter and UDRE interrupt
 	
+	CurrentUSARTPacketOutCount--;
+	/* We will trigger the whole stop on a negative number at the start of interrupt, because we now have post-transmission stuff to do
+	    that cannot be done while the last byte is still sending.
 	// Post decrement here is an option, but size wise it will not make a difference with the decrement below,
 	//    because the compiler will first do a compare, brne then dec in both cases, but written like it is now
 	//    the code is clearer for beginning programmers. However, in some case a well planned post or pre decrement
@@ -494,13 +524,15 @@ static void StartUSARTTX()
 		CurrentUSARTPacketOutCount--; // decrease here, else we will never send the last byte.
 		UCSRB |= (1 << UDRIE); // enable the UDRE interrupt only if there's more to send
 	}
+	*/
 }
 
 inline static void StopUSARTTX()
 {
-	UCSRB &= ~(1<<TXEN);
+	UCSRB &= ~( (1<<TXEN)|(1<<UDRIE)|(1<<TXCIE) ); // turn off udre interrupt, txcomplete interrupt and the transmitter
 }
 
+/*
 inline static void	TXExnackHouseOutOfBounds()
 {
 	CurrentUSARTPacketOutCount = 2;
@@ -511,7 +543,7 @@ inline static void	TXExnackHouseOutOfBounds()
 	CurrentUSARTPacketInCount = 0; // reset counter
 	StartUSARTTX();
 }
-
+*/
 
 static void BuildStandardAckAndTX()
 {
@@ -542,28 +574,28 @@ inline static void HandleLastCommand()
 			BuildStandardAckAndTX();
 			break;
 		case CMD_ReadRandomDelay:
-			BuildFourByteExackAndTX( eeprom_read_byte(&EE_RandomStepDelay) );
+			BuildFourByteExackAndTX( __eeprom_read_byte(&EE_RandomStepDelay) );
 			break;
 		case CMD_ReadPatternDelay:
-			BuildFourByteExackAndTX( eeprom_read_byte(&EE_MainStepDelay) );
+			BuildFourByteExackAndTX( __eeprom_read_byte(&EE_MainStepDelay) );
 			break;
 		case CMD_ReadPatternLength:
-			BuildFourByteExackAndTX( eeprom_read_byte(&EE_PatternStepCount) );
+			BuildFourByteExackAndTX( __eeprom_read_byte(&EE_PatternStepCount) );
 			break;
 		case CMD_ReadStartupDelay:
-			BuildFourByteExackAndTX( eeprom_read_byte(&EE_StartupDelay) );
+			BuildFourByteExackAndTX( __eeprom_read_byte(&EE_StartupDelay) );
 			break;
 		case CMD_ReadPostDelayTicksNight:
-			BuildFourByteExackAndTX( eeprom_read_byte(&EE_PostDelayTicksNightTime) );
+			BuildFourByteExackAndTX( __eeprom_read_byte(&EE_PostDelayTicksNightTime) );
 			break;
 		case CMD_ReadMinimumHouses:
-			BuildFourByteExackAndTX( eeprom_read_byte(&EE_MinimumNumberHouses) );
+			BuildFourByteExackAndTX( __eeprom_read_byte(&EE_MinimumNumberHouses) );
 			break;
 		case CMD_ReadNightTimeHouses:
-			BuildFourByteExackAndTX( eeprom_read_byte(&EE_TargetNumberHousesNightTime) );
+			BuildFourByteExackAndTX( __eeprom_read_byte(&EE_TargetNumberHousesNightTime) );
 			break;
 		case CMD_ReadDayTimeHouses:
-			BuildFourByteExackAndTX( eeprom_read_byte(&EE_TargetNumberHousesDayTime) );
+			BuildFourByteExackAndTX( __eeprom_read_byte(&EE_TargetNumberHousesDayTime) );
 			break;
 		case CMD_ReadMainFlags:
 			BuildFourByteExackAndTX( MainFlags );
@@ -572,7 +604,7 @@ inline static void HandleLastCommand()
 			BuildFourByteExackAndTX( OpFlags );
 			break;
 		case CMD_StoreCurrentUBRR:
-			eeprom_update_byte(&EE_UBRR_Startup, UBRRL); // Compiler should handle the SFRIO -> REG -> EEPROM, even when we replace with our own function later (interrupt driven)
+			__eeprom_update_byte(&EE_UBRR_Startup, UBRRL); // Compiler should handle the SFRIO -> REG -> EEPROM, even when we replace with our own function later (interrupt driven)
 			BuildStandardAckAndTX();
 			break;
 		case CMD_Ping:
@@ -594,35 +626,64 @@ inline static void HandleLastCommand()
 			StartUSARTTX();
 			break;
 		case CMD_SetRandomDelay:
-			eeprom_update_byte(&EE_RandomStepDelay, SerialInBuffer[0]);
+			__eeprom_update_byte(&EE_RandomStepDelay, SerialInBuffer[0]);
 			BuildStandardAckAndTX();
 			break;
 		case CMD_SetPatternDelay:
-			eeprom_update_byte(&EE_MainStepDelay, SerialInBuffer[0]);
+			__eeprom_update_byte(&EE_MainStepDelay, SerialInBuffer[0]);
 			BuildStandardAckAndTX();
 			break;
 		case CMD_SetMinimumHouses:
-			eeprom_update_byte(&EE_MinimumNumberHouses, SerialInBuffer[0]);
-			BuildStandardAckAndTX();
+			if( ( SerialInBuffer[0] > __eeprom_read_byte(&EE_TargetNumberHousesNightTime) ) ||
+				( SerialInBuffer[0] > __eeprom_read_byte(&EE_TargetNumberHousesDayTime) ) )
+			{ // if the minimum is higher than an existing target, respond with error and don't store
+				BuildExNackAndTX(CMD_EXNACK_MinimumTooHigh);
+			}
+			else
+			{
+				__eeprom_update_byte(&EE_MinimumNumberHouses, SerialInBuffer[0]);
+				BuildStandardAckAndTX();
+			}
 			break;
 		case CMD_SetNightTimeHouses:
-			eeprom_update_byte(&EE_TargetNumberHousesNightTime, SerialInBuffer[0]);
-			BuildStandardAckAndTX();
+			if( SerialInBuffer[0] < __eeprom_read_byte(&EE_MinimumNumberHouses) )
+			{ // target is lower than minimum, respon with error and don't store
+				BuildExNackAndTX(CMD_EXNACK_SetHousesLowerThanMinimum);
+			}
+			else
+			{
+				__eeprom_update_byte(&EE_TargetNumberHousesNightTime, SerialInBuffer[0]);
+				BuildStandardAckAndTX();
+			}
 			break;
 		case CMD_SetDayTimeHouses:
-			eeprom_update_byte(&EE_TargetNumberHousesDayTime, SerialInBuffer[0]);
-			BuildStandardAckAndTX();
+			if( SerialInBuffer[0] < __eeprom_read_byte(&EE_MinimumNumberHouses) )
+			{ // target is lower than minimum, respon with error and don't store
+				BuildExNackAndTX(CMD_EXNACK_SetHousesLowerThanMinimum);
+			}
+			else
+			{
+				__eeprom_update_byte(&EE_TargetNumberHousesDayTime, SerialInBuffer[0]);
+				BuildStandardAckAndTX();
+			}
 			break;
 		case CMD_SetPatternLength:
-			eeprom_update_byte(&EE_PatternStepCount, SerialInBuffer[0]);
-			BuildStandardAckAndTX();
+			if( SerialInBuffer[0] >= MAXIMUM_PATTERN_SIZE )
+			{ // if the pattern length is too high for the available memory:
+				BuildExNackAndTX(CMD_EXNACK_PatternLengthTooHigh);
+			}
+			else
+			{
+				__eeprom_update_byte(&EE_PatternStepCount, SerialInBuffer[0]);
+				BuildStandardAckAndTX();
+			}
 			break;
 		case CMD_SetStartupDelay:
-			eeprom_update_byte(&EE_StartupDelay, SerialInBuffer[0]);
+			__eeprom_update_byte(&EE_StartupDelay, SerialInBuffer[0]);
 			BuildStandardAckAndTX();
 			break;
 		case CMD_SetPostDelayTicksNight:
-			eeprom_update_byte(&EE_PostDelayTicksNightTime, SerialInBuffer[0]);
+			__eeprom_update_byte(&EE_PostDelayTicksNightTime, SerialInBuffer[0]);
 			BuildStandardAckAndTX();
 			break;
 		case CMD_SetHouseOn:
@@ -633,7 +694,7 @@ inline static void HandleLastCommand()
 			}
 			else
 			{
-				TXExnackHouseOutOfBounds();
+				BuildExNackAndTX(CMD_EXNACK_NumberOutOfBounds);
 			}
 			break;
 		case CMD_SetHouseOff:
@@ -644,27 +705,29 @@ inline static void HandleLastCommand()
 			}
 			else
 			{
-				TXExnackHouseOutOfBounds();
+				BuildExNackAndTX(CMD_EXNACK_NumberOutOfBounds);
 			}
 			break;
 		case CMD_SetUBRR:
-			UBRRH = 0x00; // make sure the 16bit high byte is zero
-			UBRRL = SerialInBuffer[0];
+			UBRRBuffer = SerialInBuffer[0];
 			BuildStandardAckAndTX();
 			break;
 		case CMD_SetAndStoreMainFlags:
 			MainFlags = SerialInBuffer[0];
-			eeprom_update_byte(&EE_MainFlags, MainFlags);
+			__eeprom_update_byte(&EE_MainFlags, MainFlags);
 			BuildStandardAckAndTX();
 			break;
 		case CMD_GetRandomNumber:
-			CurrentUSARTPacketOutCount = 2;
+			BuildFourByteExackAndTX( PopRandomNumber() );
+			/*
+			CurrentUSARTPacketOutCount = 3;
 			SerialOutBuffer[2] = CMD_RESPONSE_EXACK;
 			SerialOutBuffer[1] = 1; // 1 byte follows
 			SerialOutBuffer[0] = PopRandomNumber();
 			LastCommand = 0; // clear command
 			CurrentUSARTPacketInCount = 0; // reset USART counter
 			StartUSARTTX();
+			*/
 			break;
 		case CMD_GetDeviceSignature:
 			// TODO: Read each signature byte;
@@ -714,6 +777,23 @@ inline static void HandleLastCommand()
 	OpFlags &= ~FLAG_OP_USART_HANDLE_COMMAND; // handling of command completed, release flag before we finish.
 }
 
+inline static void PostTXActions()
+{
+	if( ( OpFlags & FLAG_OP_SET_UBRR_AFTERTX ) == FLAG_OP_SET_UBRR_AFTERTX )
+	{
+		UBRRH = 0x00; // make sure the 16bit high byte is zero
+		UBRRL = UBRRBuffer;
+	}
+	else if( ( OpFlags & FLAG_OP_GOTO_BOOTLOADER_AFTERTX ) == FLAG_OP_GOTO_BOOTLOADER_AFTERTX )
+	{
+		// TODO: Create bootloader system
+	}/*
+	else if( ( OpFlags & FLAG_OP_SET_UBRR_AFTERTX ) == FLAG_OP_SET_UBRR_AFTERTX )
+	{
+		
+	}*/
+}
+
 /*
  * Process the next pattern step
  * TODO: Create a pattern stepping process
@@ -733,27 +813,27 @@ inline static void ProcessRandomHouseToggle()
 	
 	if( (PIN_NIGHTMODE & PORTIN_NIGHTMODE) == PIN_NIGHTMODE )
 	{ // if we're in night mode:
-		temp = eeprom_read_byte(&EE_TargetNumberHousesNightTime);
+		temp = __eeprom_read_byte(&EE_TargetNumberHousesNightTime);
 		if( CurrentTargetHouses > temp )
 		{ // and the current number of target houses is still larger than the desired number
 			NightTimeDecreaseDecounter--; // decrease the ticker
 			if( NightTimeDecreaseDecounter == 0 )
 			{ // if the ticker reached zero:
 				CurrentTargetHouses--; // decrease the target house number by one and reset the ticker:
-				NightTimeDecreaseDecounter = eeprom_read_byte(&EE_PostDelayTicksNightTime);
+				NightTimeDecreaseDecounter = __eeprom_read_byte(&EE_PostDelayTicksNightTime);
 			}
 		}
 	}
 	else
 	{
-		temp = eeprom_read_byte(&EE_TargetNumberHousesDayTime);
+		temp = __eeprom_read_byte(&EE_TargetNumberHousesDayTime);
 		if( CurrentTargetHouses < temp )
 		{
 			NightTimeDecreaseDecounter--;
 			if( NightTimeDecreaseDecounter == 0 )
 			{
 				CurrentTargetHouses++;
-				NightTimeDecreaseDecounter = eeprom_read_byte(&EE_PostDelayTicksNightTime);
+				NightTimeDecreaseDecounter = __eeprom_read_byte(&EE_PostDelayTicksNightTime);
 			}
 		}
 	}
@@ -915,3 +995,47 @@ inline static void SetNoEffectOutputs()
 		PORTD &= ~PORTD_STARTUP_ALL_ON; // to only update the desired bits
 	}
 }
+
+
+/*
+ Wrapper for blocking eeprom call, including a check on internal flags.
+ TODO: consider consolidating this transfer in the eeprom R/W interrupted process, possibly saving program space on total
+*/
+inline static uint8_t __eeprom_read_byte(uint8_t * EEPromAddress)
+{
+	uint8_t temp;
+	while( (OpFlags & FLAG_OP_EEPROM_INPROGRESS) ) {}; // block while we're in an interrupt driven access
+	OpFlags |= FLAG_OP_EEPROM_INPROGRESS;
+	temp = eeprom_read_byte(EEPromAddress);
+	OpFlags &= ~FLAG_OP_EEPROM_INPROGRESS;
+	return temp;
+}
+
+/*
+ Wrapper for blocking eeprom call, including a check on internal flags.
+ TODO: consider consolidating this transfer in the eeprom R/W interrupted process, possibly saving program space on total
+*/
+inline static void __eeprom_update_byte(uint8_t * EEPromAddress, uint8_t ByteSource)
+{
+	while( (OpFlags & FLAG_OP_EEPROM_INPROGRESS) ) {}; // block while we're in an interrupt driven access
+	
+	OpFlags |= FLAG_OP_EEPROM_INPROGRESS;
+	eeprom_update_byte(EEPromAddress, ByteSource);
+	OpFlags &= ~FLAG_OP_EEPROM_INPROGRESS;
+}
+
+
+inline static void EepromStartIWrite()
+{
+	OpFlags |= FLAG_OP_EEPROM_INPROGRESS;
+	// enable interrupt
+	// load first address
+	// load/write first byte
+}
+
+/*
+ISR(EEPROM_Ready_vect)
+{
+	OpFlags &= ~FLAG_OP_EEPROM_INPROGRESS;
+}
+*/

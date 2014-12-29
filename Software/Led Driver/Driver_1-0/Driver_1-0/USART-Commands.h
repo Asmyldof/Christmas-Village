@@ -29,6 +29,12 @@
 #define		CMD_MASK_SingleByte			0x00 // upper two bits zero is a single byte (direct execution) command
 // Any commands sent not fitting this mask will be responded to with NACK
 
+
+// NOTE during development, testing and refactoring: 
+//    commands indented with one space work, but seem to have some internal problem (noted on whiteboard, may become digital if it lasts well into january)
+//    commands indented with two spaces work and seem to have no internal problems based on at least two or three sets of full tests of ACK/NACK behaviour
+//    commands that have been fully tested a multitude of times (10 or more) and always react correctly are indented with three spaces.
+// When a command is under development or refactoring it will (must!) go back to zero indent and be re-tested from the start                                      
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  *  Single Byte Commands (0x10 through 0x3F)
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
@@ -55,24 +61,24 @@
 // this makes sure that the new speed can be comunicated at before it is set as default start-up
 // Best practice would be to add a PING/PONG between the two commands to properly verify
 
-#define		CMD_Ping						0x3A // should get a PONG back
-#define		CMD_GetVersion					0x3B // gets EXACK, followed by Major, Minor and Release version of the device (after a byte count of 3 of course)
-#define		CMD_GetDeviceSignature			0x3C // gets EXACK, followed by the three signature bytes of the device (after a byte count of 6 of course), followed by 3 bytes Asmyldof Project Signature (in case Asmyldof later creates a complete support suite)
+  #define		CMD_Ping						0x3A // should get a PONG back
+  #define		CMD_GetVersion					0x3B // gets EXACK, followed by Major, Minor and Release version of the device (after a byte count of 3 of course)
+ #define		CMD_GetDeviceSignature			0x3C // gets EXACK, followed by the three signature bytes of the device (after a byte count of 6 of course), followed by 3 bytes Asmyldof Project Signature (in case Asmyldof later creates a complete support suite)
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  * Double Byte Commands (0xC0 through 0xFF)
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-#define		CMD_SetRandomDelay				0xC0 // standard ACK/NACK response
+  #define		CMD_SetRandomDelay				0xC0 // standard ACK/NACK response
 #define		CMD_SetPatternDelay				0xC1 // standard ACK/NACK response
 #define		CMD_SetMinimumHouses			0xC2 // standard ACK/NACK response
 #define		CMD_SetNightTimeHouses			0xC3 // ACK or EXNACK
 #define		CMD_SetDayTimeHouses			0xC4 // ACK or EXNACK
 #define		CMD_SetPatternLength			0xC5 // ACK or EXNACK
-#define		CMD_SetStartupDelay				0xC6
-#define		CMD_SetPostDelayTicksNight		0xC7
+  #define		CMD_SetStartupDelay				0xC6
+  #define		CMD_SetPostDelayTicksNight		0xC7
 
-#define		CMD_SetHouseOn					0xD0 // followed by house number ; ACK or EXNACK: NumberOutOfBounds
-#define		CMD_SetHouseOff					0xD1 // followed by house number ; ACK or EXNACK
+  #define		CMD_SetHouseOn					0xD0 // followed by house number ; ACK or EXNACK: NumberOutOfBounds
+  #define		CMD_SetHouseOff					0xD1 // followed by house number ; ACK or EXNACK
 
 #define		CMD_SetUBRR						0xE0 // standard ACK/NACK response (Allows change of USART speed)
 // Make sure the resulting speed is no less than 14.4k for triggering the bootloader without time-out interrupts (these can be very
