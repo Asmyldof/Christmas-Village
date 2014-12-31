@@ -3,7 +3,7 @@ Christmas-Village
 A two cheap microcontroller project to control which of ten channels is on or off based on a true-random generator (with guaranteed no bias), while also controlling the general brightness either manually or from a light sensor.
 The remainder of this ReadMe will be written as a chronological logbook, to show the speed at which the development was done.
 
-How a missing connector inspired me to make a present in stead buying one:
+How a missing connector inspired me to make a present in stead of buying one:
 =================
 
 Early December 2013:
@@ -63,8 +63,12 @@ Continuation of the development: Adding Serial interface, interleaved with shopp
 
 December 28th 2014 (2:30 AM):
 -----
-Serial command set almost completely implemented, before the remaining command get implemented the default eeprom_() routines from AVR-GCC need to be switched over to interrupt driven and flag-bocked, or some routine splitting needs to be done to get the blocking eeprom read/writes in the non-interrupt space inside main(). Else the "ReadPattern" and "WritePattern" commands will hold up too many interrupts.
+Serial command set almost completely implemented, before the remaining command get implemented the default eeprom_ routines from AVR-GCC need to be switched over to interrupt driven and flag-bocked, or some routine splitting needs to be done to get the blocking eeprom read/writes in the non-interrupt space inside main(). Else the "ReadPattern" and "WritePattern" commands will hold up too many interrupts.
 
 December 28th 2014 (14:00 to 16:30):
 -----
 A small window of hardware testing, allowing debugging of the USART code and changing some variables into GPIOR, to decrease code size. Basic USART system working, not all commands fully tested yet.
+
+December 30th, 31st 2014 and January 1st, 2nd and 3rd 2015:
+-----
+More debugging to be done, before the hardware leaves, small sessions in between other activities, it's a busy week after all. Plan is to complete the USART (excepting GoToBootloader)and EEPROM interfaces and hopefully make the pattern system work completely. Once that is all completed andthere is still room enough for a two or three page fixed bootloader, at least in the 4313 setup, that will be added later (weekends during January 2015, or a little later)
