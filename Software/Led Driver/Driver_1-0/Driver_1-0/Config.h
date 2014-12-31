@@ -112,7 +112,7 @@
 #define		DDRB_STARTUP					0xFF
 #define		DDRD_STARTUP					0x60 | (1 << PORTD1) // PORTD1 = TXD pin, make high too.
 
-#define		PORTA_STARTUP					0x00
+#define		PORTA_STARTUP					0x00 | (1<<PORTA2) // Set weak pull-up active on the reset
 // Port definitions for all pins on:
 #define		PORTB_STARTUP_ALL_ON			0xFF
 #define		PORTD_STARTUP_ALL_ON			0x60
@@ -123,9 +123,9 @@
 #define		WDTCSR_STARTUP				( (1<<WDIE)|(1<<WDP2) ) // Prescaled to about 1/4 second interval, enable the watchdog interrupt
 #endif	// DEBUGGING_TIMESCALE
 
-#define		TCCR0A_STARTUP					(1<<WGM01) // Select CTC Mode on OCR0A
-#define		TCCR0B_STARTUP					( (1<<CS01)|(1<<CS00) ) // Prascale by 64
-#define		OCR0A_STARTUP					11 // Overflow at 115 to sample at about 1kHz (about 125 truly random numbers per second)
+#define		TCCR_RANDOM_A_STARTUP					(1<<WGM01) // Select CTC Mode on OCR0A
+#define		TCCR_RANDOM_B_STARTUP					( (1<<CS01)|(1<<CS00) ) // Prascale by 64
+#define		OCR_RANDOM_A_STARTUP					11 // Overflow at 115 to sample at about 1kHz (about 125 truly random numbers per second)
 
 #define		TIMSK_STARTUP					(1<<OCIE0A)
 
@@ -138,6 +138,23 @@
 #define		TXPIN_DDR						DDRD
 #define		TXPIN_PIN						(1<<PORTD1)
 
-#endif // __LED_DRIVER_USART_CMDS_H__
+#define		UBRRHighRegister				UBRRH
+#define		UBRRLowRegister					UBRRL
+
+#define		USART_CSRA						UCSRA
+#define		USART_CSRB						UCSRB
+#define		USART_CSRC						UCSRC
+#define		USART_STATUS_FLAG_REGISTER		UCSRA
+#define		USART_ERROR_FLAGS				(1<<FE|1<<UPE)
+
+
+#define		OCR_RANDOM_A					OCR0A
+#define		TCCR_RANDOM_A					TCCR0A
+#define		TCCR_RANDOM_B					TCCR0B
+
+#define		TIMSK_REGISTER					TIMSK
+
+
+#endif // __LED_DRIVER_CONFIG_H__
 
 

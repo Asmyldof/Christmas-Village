@@ -130,9 +130,10 @@ int main(void)
 	
 	temp = __eeprom_read_byte(&EE_UBRR_Startup);
 	
-	UBRRH = 0x00;
-	UBRRL = temp;
+	UBRRHighRegister = 0x00;
+	UBRRLowRegister = temp;
 	
+	DDRA = DDRA_STARTUP;
 	DDRB = DDRB_STARTUP;
 	DDRD = DDRD_STARTUP;
 	
@@ -140,17 +141,12 @@ int main(void)
 	TXPIN_PORT |= TXPIN_PIN;
 	TXPIN_DDR |= TXPIN_PIN;
 	
-	/*
-	UCSRA = 0;//UCSRA_STARTUP;
-	UCSRB = 0b10011000;//UCSRB_STARTUP; // RX int, TXEN, RXEN
-	UCSRC = 0b00000110;//UCSRC_STARTUP; // 1 stop, 1 start, no parity, 8 data
-	*/
-	
-	UCSRA = UCSRA_STARTUP;
-	UCSRB = UCSRB_STARTUP; 
-	UCSRC = UCSRC_STARTUP;
+	USART_CSRA = UCSRA_STARTUP;
+	USART_CSRB = UCSRB_STARTUP; 
+	USART_CSRC = UCSRC_STARTUP;
 	
 	SetNoEffectOutputs();
+	PORTA = PORTA_STARTUP;
 	
 	OpFlags = 0x00;
 	CurrentUSARTPacketOutCount = 0x00;
@@ -163,11 +159,11 @@ int main(void)
 	
 	WDTCR = WDTCSR_STARTUP;
 	
-	OCR0A = OCR0A_STARTUP;
-	TCCR0A = TCCR0A_STARTUP;
-	TCCR0B = TCCR0B_STARTUP;
+	OCR_RANDOM_A = OCR_RANDOM_A_STARTUP;
+	TCCR_RANDOM_A = TCCR_RANDOM_A_STARTUP;
+	TCCR_RANDOM_B = TCCR_RANDOM_B_STARTUP;
 	
-	TIMSK = TIMSK_STARTUP;
+	TIMSK_REGISTER = TIMSK_STARTUP;
 	
 	sei();
 	
@@ -204,10 +200,9 @@ int main(void)
 /* upon completed receipt of a byte: */
 ISR(USART0_RX_vect)
 {
-	uint8_t	USART_Status = UCSRA;
-	uint8_t CurrentByte = UDR;
+	uint8_t CurrentByte = UDR; // always read, to clear interrupt and free buffer
 	
-	if( ( USART_Status & (1<<FE|1<<UPE) ) != 0 )
+	if( ( USART_STATUS_FLAG_REGISTER & USART_ERROR_FLAGS ) != 0 )
 	{
 		// If there was a framing error or a parity error, ignore and return (low-level idle line)
 		return;
@@ -216,7 +211,7 @@ ISR(USART0_RX_vect)
 	if( CurrentUSARTPacketInCount == 0 )
 	{ 
 		if( CurrentByte != 0 )
-		{ // Command = 0 is illegal, not defined, hard-coded, not allowed, not ever, gives no response (idle line)
+		{ // Command = 0 is illegal, not defined, hard-coded, not allowed, not ever, gives no response (high-level idle line)
 			LastCommand = CurrentByte;
 			if( ( CurrentByte & CMD_MASK_CommandSize ) == CMD_MASK_SingleByte )
 			{ // The new command is a single-byte one, so decode and respond through mainloop right away:
@@ -291,6 +286,9 @@ ISR(USART0_TX_vect)
 	PostTXActions();
 	// turn off the interrupt to make sure no inappropriate triggers happen at a next transfer:
 	UCSRB &= ~(1<<TXCIE);
+	
+	// as we are doing half-duplex type communication, enable the receiver once the last bit is sent:
+	USART_CSRB |= (1<<RXEN);
 }
 
 
@@ -494,10 +492,13 @@ static void PushRandomNumber(uint8_t input)
 
 static void StartUSARTTX()
 {	
+	// as we are doing half-duplex type communication, disable the receiver once we start transmitting (startTX is only called once a command has been fully parsed, so this is safe).
+	USART_CSRB &= ~(1<<RXEN);
+	
 	UDR = SerialOutBuffer[CurrentUSARTPacketOutCount]; // get current byte into the serial output register and decrement counter
 	CurrentUSARTPacketOutCount--;
 	
-	UCSRB |= ( (1 << TXEN)|(1 << UDRIE) ); // Enable the transmitter and UDRE interrupt
+	USART_CSRB |= ( (1 << TXEN)|(1 << UDRIE) ); // Enable the transmitter and UDRE interrupt
 	// Note: Enabling the UDRIE and TXEN at the same time should always be done after loading the UDR with the first byte,
 	//    because, of course, else the interrupt will trigger immediately.
 	//    During refactoring this occurred, as a lot of statements were juggled around and compacted, and due to the high speed of
@@ -506,7 +507,7 @@ static void StartUSARTTX()
 
 inline static void StopUSARTTX()
 {
-	UCSRB &= ~( (1<<TXEN)|(1<<UDRIE) ); // turn off udre interrupt, txcomplete interrupt and the transmitter
+	USART_CSRB &= ~( (1<<TXEN)|(1<<UDRIE) ); // turn off udre interrupt and the transmitter
 }
 
 
@@ -732,8 +733,8 @@ inline static void PostTXActions()
 {
 	if( ( OpFlags & FLAG_OP_SET_UBRR_AFTERTX ) == FLAG_OP_SET_UBRR_AFTERTX )
 	{
-		UBRRH = 0x00; // make sure the 16bit high byte is zero
-		UBRRL = UBRRBuffer;
+		UBRRHighRegister = 0x00; // make sure the 16bit high byte is zero
+		UBRRLowRegister = UBRRBuffer;
 	}
 	else if( ( OpFlags & FLAG_OP_GOTO_BOOTLOADER_AFTERTX ) == FLAG_OP_GOTO_BOOTLOADER_AFTERTX )
 	{
